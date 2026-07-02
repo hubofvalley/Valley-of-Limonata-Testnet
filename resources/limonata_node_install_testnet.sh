@@ -20,6 +20,19 @@ read -p "Enter your preferred port number prefix (leave empty to use default: 26
 if [ -z "$LIMONATA_PORT" ]; then
     LIMONATA_PORT=26
 fi
+echo
+echo "Indexer setting:"
+echo "- ON  = keeps the transaction indexer enabled, useful for search/query tooling."
+echo "- OFF = disables transaction indexing, lighter on disk/IO but tx search will be limited."
+read -p "Enable transaction indexer? (y/n, default y): " LIMONATA_INDEXER_ENABLED
+LIMONATA_INDEXER_ENABLED=${LIMONATA_INDEXER_ENABLED:-y}
+echo
+echo "Pruning setting:"
+echo "- custom pruning keeps recent state only, reducing disk usage for normal validators."
+echo "- pruning-keep-recent = 100 means keep the latest 100 recent states."
+echo "- pruning-interval = 19 means prune every 19 blocks."
+read -p "Use custom pruning (keep-recent=100, interval=19)? (y/n, default y): " LIMONATA_CUSTOM_PRUNING
+LIMONATA_CUSTOM_PRUNING=${LIMONATA_CUSTOM_PRUNING:-y}
 read -p "Install method - prebuilt binary or build from source? (p/s, default p): " INSTALL_METHOD
 INSTALL_METHOD=${INSTALL_METHOD:-p}
 read -p "Configure UFW firewall rules for Limonata? (y/n): " SETUP_UFW
@@ -69,7 +82,10 @@ echo "export LIMONATA_MONIKER=\"$LIMONATA_MONIKER\"" >> $HOME/.bash_profile
 echo "export LIMONATA_CHAIN_ID=\"limonata_10777-1\"" >> $HOME/.bash_profile
 echo "export LIMONATA_EVM_CHAIN_ID=\"10777\"" >> $HOME/.bash_profile
 echo "export LIMONATA_PORT=\"$LIMONATA_PORT\"" >> $HOME/.bash_profile
+echo "export LIMONATA_HOME=\"$HOME/.limonatad\"" >> $HOME/.bash_profile
+echo "export LIMONATA_EVM_RPC=\"https://rpc.limonata.xyz\"" >> $HOME/.bash_profile
 source $HOME/.bash_profile
+LIMONATA_HOME=${LIMONATA_HOME:-$HOME/.limonatad}
 
 # Optional: Configure UFW based on chosen ports
 if [[ "$SETUP_UFW" =~ ^[Yy]$ ]]; then
@@ -81,16 +97,28 @@ if [[ "$SETUP_UFW" =~ ^[Yy]$ ]]; then
 fi
 
 # 4. Initialize the node and fetch genesis
-limonatad init "$LIMONATA_MONIKER" --chain-id limonata_10777-1
-curl -s https://limonata.xyz/genesis.json -o $HOME/.limonatad/config/genesis.json
-limonatad genesis validate-genesis
+limonatad --home "$LIMONATA_HOME" init "$LIMONATA_MONIKER" --chain-id limonata_10777-1
+curl -s https://limonata.xyz/genesis.json -o "$LIMONATA_HOME/config/genesis.json"
+limonatad --home "$LIMONATA_HOME" genesis validate-genesis
 
 # 5. Network configuration (peers, mempool, gas prices) - verbatim from official guide
-CFG=$HOME/.limonatad/config/config.toml
-APP=$HOME/.limonatad/config/app.toml
+CFG=$LIMONATA_HOME/config/config.toml
+APP=$LIMONATA_HOME/config/app.toml
 sed -i 's#^persistent_peers =.*#persistent_peers = "4b154368aab24cb5b31c927efd50c73d0f4f9799@142.127.103.79:26656"#' "$CFG"
 sed -i 's/^type = "flood"/type = "app"/' "$CFG"
 sed -i 's/^minimum-gas-prices = .*/minimum-gas-prices = "0aLIMO"/' "$APP"
+
+if [[ "$LIMONATA_INDEXER_ENABLED" =~ ^[Nn]$ ]]; then
+    sed -i 's/^indexer = .*/indexer = "null"/' "$CFG"
+else
+    sed -i 's/^indexer = .*/indexer = "kv"/' "$CFG"
+fi
+
+if [[ "$LIMONATA_CUSTOM_PRUNING" =~ ^[Yy]$ ]]; then
+    sed -i 's/^pruning = .*/pruning = "custom"/' "$APP"
+    sed -i 's/^pruning-keep-recent = .*/pruning-keep-recent = "100"/' "$APP"
+    sed -i 's/^pruning-interval = .*/pruning-interval = "19"/' "$APP"
+fi
 
 # 6. Set custom ports in config.toml and app.toml
 sed -i.bak -e "s%laddr = \"tcp://0.0.0.0:26656\"%laddr = \"tcp://0.0.0.0:${LIMONATA_PORT}656\"%;
@@ -111,8 +139,8 @@ After=network-online.target
 
 [Service]
 User=$USER
-WorkingDirectory=$HOME/.limonatad
-ExecStart=$(which limonatad) start --chain-id limonata_10777-1 --evm.evm-chain-id 10777 --minimum-gas-prices 0aLIMO
+WorkingDirectory=$LIMONATA_HOME
+ExecStart=$(which limonatad) start --home $LIMONATA_HOME --chain-id limonata_10777-1 --evm.evm-chain-id 10777 --minimum-gas-prices 0aLIMO
 StandardOutput=journal
 StandardError=journal
 Restart=on-failure
@@ -135,7 +163,7 @@ sudo systemctl restart ${LIMONATA_SERVICE_NAME}
 # 9. Confirmation message for installation completion
 if systemctl is-active --quiet ${LIMONATA_SERVICE_NAME}; then
     echo "Node installation and service started successfully!"
-    echo "Monitor sync status with: limonatad status 2>&1 | grep -o '\"catching_up\":[a-z]*'"
+    echo "Monitor sync status with: curl -s http://127.0.0.1:${LIMONATA_PORT}657/status | jq '.result.sync_info'"
 else
     echo "Node installation failed. Please check the logs for more information."
 fi

@@ -50,7 +50,7 @@
     "genesis_url": "https://limonata.xyz/genesis.json",
     "persistent_peers": "4b154368aab24cb5b31c927efd50c73d0f4f9799@142.127.103.79:26656",
     "faucet_url": "https://faucet.limonata.xyz",
-    "public_rpc": "UNKNOWN",
+    "public_rpc": "https://rpc.limonata.xyz",
     "snapshot_url": "UNKNOWN",
     "explorer_url": "UNKNOWN"
   }

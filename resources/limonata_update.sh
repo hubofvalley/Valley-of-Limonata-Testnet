@@ -16,7 +16,7 @@ source $HOME/.bash_profile 2>/dev/null
 LIMONATA_SERVICE_NAME=${LIMONATA_SERVICE_NAME:-limonatad}
 
 echo "Current version:"
-limonatad version 2>/dev/null || echo "limonatad not found"
+limonatad --home "${LIMONATA_HOME:-$HOME/.limonatad}" version 2>/dev/null || limonatad version 2>/dev/null || echo "limonatad not found"
 
 read -p "Update to the latest official release? (yes/no): " confirm
 if [[ "${confirm,,}" != "yes" ]]; then
@@ -34,7 +34,7 @@ sudo install limonatad /usr/local/bin/
 rm -f $HOME/limonatad
 
 echo "New version:"
-limonatad version
+limonatad --home "${LIMONATA_HOME:-$HOME/.limonatad}" version
 
 # Restart service
 sudo systemctl daemon-reload

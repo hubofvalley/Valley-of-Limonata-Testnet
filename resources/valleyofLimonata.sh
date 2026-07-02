@@ -12,6 +12,9 @@ RESET='\033[0m'
 # Service Name Detection - Ask Once, Remember Forever
 source $HOME/.bash_profile 2>/dev/null
 
+LIMONATA_HOME=${LIMONATA_HOME:-$HOME/.limonatad}
+LIMONATA_EVM_RPC=${LIMONATA_EVM_RPC:-https://rpc.limonata.xyz}
+
 if [ -z "${LIMONATA_SERVICE_NAME:-}" ]; then
     echo -e "${YELLOW}Service name configuration not found.${RESET}"
     read -p "Enter Service Name (default 'limonatad'): " INPUT_SVC
@@ -113,10 +116,55 @@ read -r
 
 grep -q "LIMONATA_CHAIN_ID" $HOME/.bash_profile 2>/dev/null || echo "export LIMONATA_CHAIN_ID=\"limonata_10777-1\"" >> $HOME/.bash_profile
 grep -q "LIMONATA_EVM_CHAIN_ID" $HOME/.bash_profile 2>/dev/null || echo "export LIMONATA_EVM_CHAIN_ID=\"10777\"" >> $HOME/.bash_profile
+grep -q "LIMONATA_HOME" $HOME/.bash_profile 2>/dev/null || echo "export LIMONATA_HOME=\"$HOME/.limonatad\"" >> $HOME/.bash_profile
+grep -q "LIMONATA_EVM_RPC" $HOME/.bash_profile 2>/dev/null || echo "export LIMONATA_EVM_RPC=\"https://rpc.limonata.xyz\"" >> $HOME/.bash_profile
 source $HOME/.bash_profile
+LIMONATA_HOME=${LIMONATA_HOME:-$HOME/.limonatad}
+LIMONATA_EVM_RPC=${LIMONATA_EVM_RPC:-https://rpc.limonata.xyz}
+
+function limonata_cmd() {
+    limonatad --home "$LIMONATA_HOME" "$@"
+}
+
+function hex_to_dec() {
+    local value=${1:-}
+    if [[ "$value" =~ ^0x[0-9a-fA-F]+$ ]]; then
+        printf "%d" "$value"
+    fi
+}
+
+function get_network_height() {
+    local result
+    result=$(curl -m 5 -s -X POST "$LIMONATA_EVM_RPC" \
+        -H "Content-Type: application/json" \
+        -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | jq -r '.result // empty' 2>/dev/null)
+    hex_to_dec "$result"
+}
+
+function get_local_rpc_port() {
+    local cfg="$LIMONATA_HOME/config/config.toml"
+    if [ ! -f "$cfg" ]; then
+        return
+    fi
+    awk -F: '/laddr = "tcp:\/\/127\.0\.0\.1:/ {gsub(/".*/, "", $3); print $3; exit}' "$cfg"
+}
 
 function get_local_height() {
-    limonatad status 2>/dev/null | jq -r '.sync_info.latest_block_height // .SyncInfo.latest_block_height // empty' 2>/dev/null
+    local port
+    port=$(get_local_rpc_port)
+    if [ -z "$port" ]; then
+        return
+    fi
+    curl -m 5 -s "http://127.0.0.1:${port}/status" | jq -r '.result.sync_info.latest_block_height // empty' 2>/dev/null
+}
+
+function get_local_catching_up() {
+    local port
+    port=$(get_local_rpc_port)
+    if [ -z "$port" ]; then
+        return
+    fi
+    curl -m 5 -s "http://127.0.0.1:${port}/status" | jq -r '.result.sync_info.catching_up // empty' 2>/dev/null
 }
 
 function prompt_back_or_continue() {
@@ -199,7 +247,7 @@ function add_peers() {
     echo "3. Back"
     read -p "Enter your choice (1, 2, or 3): " choice
 
-    CFG=$HOME/.limonatad/config/config.toml
+    CFG=$LIMONATA_HOME/config/config.toml
     if [ ! -f "$CFG" ]; then
         echo -e "${RED}config.toml not found at $CFG. Deploy the node first.${RESET}"
         menu
@@ -241,8 +289,16 @@ function show_node_status() {
     if [ -z "$node_height" ]; then
         echo -e "${RED}Cannot reach local node RPC. Is ${LIMONATA_SERVICE_NAME}.service running?${RESET}"
     else
-        catching_up=$(limonatad status 2>/dev/null | jq -r '.sync_info.catching_up // .SyncInfo.catching_up // "unknown"')
+        catching_up=$(get_local_catching_up)
+        [ -z "$catching_up" ] && catching_up="unknown"
         echo "Local Limonata node block height: $node_height"
+        network_height=$(get_network_height)
+        if [ -n "$network_height" ]; then
+            echo "Network latest block height: $network_height"
+            echo "Block Difference: $((network_height - node_height))"
+        else
+            echo -e "${YELLOW}Network latest block height: unavailable from $LIMONATA_EVM_RPC${RESET}"
+        fi
         echo -e "Catching up: ${YELLOW}$catching_up${RESET}"
         if [ "$catching_up" = "false" ]; then
             echo -e "${GREEN}Node is fully synced.${RESET}"
@@ -273,13 +329,13 @@ function create_operator_key() {
         1)
             read -p "Enter key name (default 'operator'): " keyname
             keyname=${keyname:-operator}
-            limonatad keys add "$keyname"
+            limonata_cmd keys add "$keyname"
             echo -e "\n${RED}WRITE DOWN THE MNEMONIC ABOVE AND STORE IT OFFLINE. It will not be shown again.${RESET}"
             ;;
         2)
             read -p "Enter key name (default 'operator'): " keyname
             keyname=${keyname:-operator}
-            limonatad keys add "$keyname" --recover
+            limonata_cmd keys add "$keyname" --recover
             ;;
         3)
             menu
@@ -299,7 +355,7 @@ function create_operator_key() {
 
 function show_validator_pubkey() {
     echo -e "${CYAN}Your validator consensus public key:${RESET}"
-    limonatad comet show-validator
+    limonata_cmd comet show-validator
     echo -e "\n${YELLOW}Use this pubkey in validator.json when creating your validator. Press Enter to go back to main menu...${RESET}"
     read -r
     menu
@@ -337,7 +393,7 @@ function create_validator() {
     STAKE=$(echo "$STAKE_LIMO * 10^18" | bc)
     STAKE=${STAKE%%.*}
 
-    PUBKEY=$(limonatad comet show-validator)
+    PUBKEY=$(limonata_cmd comet show-validator)
     if [ -z "$PUBKEY" ]; then
         echo -e "${RED}Error: could not read validator pubkey. Is the node initialized?${RESET}"
         menu
@@ -371,7 +427,7 @@ EOF
         return
     fi
 
-    limonatad tx staking create-validator "$VALIDATOR_JSON" \
+    limonata_cmd tx staking create-validator "$VALIDATOR_JSON" \
         --from "$KEY_NAME" \
         --chain-id "$LIMONATA_CHAIN_ID" \
         --gas auto --gas-adjustment 1.3 --fees 0aLIMO -y
@@ -394,7 +450,7 @@ function query_balance() {
         1)
             read -p "Enter key name (default 'operator'): " keyname
             keyname=${keyname:-operator}
-            address=$(limonatad keys show "$keyname" -a 2>/dev/null)
+            address=$(limonata_cmd keys show "$keyname" -a 2>/dev/null)
             if [ -z "$address" ]; then
                 echo -e "${RED}Key '$keyname' not found in keyring.${RESET}"
                 menu
@@ -416,7 +472,7 @@ function query_balance() {
     esac
 
     echo -e "${CYAN}Fetching balance for $address...${RESET}"
-    limonatad query bank balances "$address"
+    limonata_cmd query bank balances "$address"
     echo -e "\n${YELLOW}Note: amounts are in aLIMO (1 LIMO = 10^18 aLIMO).${RESET}"
     echo -e "${YELLOW}Press Enter to go back to main menu...${RESET}"
     read -r
@@ -438,7 +494,7 @@ function delegate_tokens() {
 
     case $CHOICE in
         1)
-            VALOPER=$(limonatad keys show operator --bech val -a 2>/dev/null)
+            VALOPER=$(limonata_cmd keys show operator --bech val -a 2>/dev/null)
             if [ -z "$VALOPER" ]; then
                 read -p "Could not derive valoper from key 'operator'. Enter your valoper address: " VALOPER
             fi
@@ -464,7 +520,7 @@ function delegate_tokens() {
     AMOUNT=$(echo "$AMOUNT_LIMO * 10^18" | bc)
     AMOUNT=${AMOUNT%%.*}
 
-    limonatad tx staking delegate "$VALOPER" "${AMOUNT}aLIMO" \
+    limonata_cmd tx staking delegate "$VALOPER" "${AMOUNT}aLIMO" \
         --from "$KEY_NAME" \
         --chain-id "$LIMONATA_CHAIN_ID" \
         --gas auto --gas-adjustment 1.3 --fees 0aLIMO -y
@@ -477,22 +533,22 @@ function delegate_tokens() {
 function query_validator_status() {
     read -p "Enter validator operator address (...valoper1..., leave empty to derive from key 'operator'): " VALOPER
     if [ -z "$VALOPER" ]; then
-        VALOPER=$(limonatad keys show operator --bech val -a 2>/dev/null)
+        VALOPER=$(limonata_cmd keys show operator --bech val -a 2>/dev/null)
     fi
     if [ -z "$VALOPER" ]; then
         echo -e "${RED}No valoper address available.${RESET}"
         menu
         return
     fi
-    limonatad query staking validator "$VALOPER"
+    limonata_cmd query staking validator "$VALOPER"
     echo -e "\n${YELLOW}Press Enter to go back to main menu${RESET}"
     read -r
     menu
 }
 
 function backup_validator_key() {
-    if [ -f "$HOME/.limonatad/config/priv_validator_key.json" ]; then
-        cp $HOME/.limonatad/config/priv_validator_key.json $HOME/priv_validator_key.json
+    if [ -f "$LIMONATA_HOME/config/priv_validator_key.json" ]; then
+        cp "$LIMONATA_HOME/config/priv_validator_key.json" $HOME/priv_validator_key.json
         echo -e "\n${YELLOW}Your priv_validator_key.json file has been copied to $HOME${RESET}"
         echo -e "${RED}Move it somewhere safe and offline.${RESET}"
     else
@@ -524,7 +580,7 @@ function delete_limonata_node() {
     sudo systemctl disable ${LIMONATA_SERVICE_NAME} || true
     sudo rm -f /etc/systemd/system/${LIMONATA_SERVICE_NAME}.service
     sudo systemctl daemon-reload
-    sudo rm -rf $HOME/.limonatad
+    sudo rm -rf "$LIMONATA_HOME"
     sudo rm -f /usr/local/bin/limonatad
     sed -i "/LIMONATA_/d" "$HOME/.bash_profile"
     echo -e "${RED}Limonata node deleted. Remember to clean up any keys you backed up elsewhere.${RESET}"
@@ -565,6 +621,8 @@ function show_guidelines() {
 function menu() {
     local_height=$(get_local_height)
     [ -z "$local_height" ] && local_height="N/A (node not running)"
+    network_height=$(get_network_height)
+    [ -z "$network_height" ] && network_height="N/A ($LIMONATA_EVM_RPC unavailable)"
     echo -e "${ORANGE}Valley of Limonata Testnet${RESET}"
     echo "Main Menu:"
     echo -e "${GREEN}1. Node Interactions:${RESET}"
@@ -589,6 +647,7 @@ function menu() {
     echo -e "${YELLOW}5. Show Guidelines${RESET}"
     echo -e "${RED}6. Exit${RESET}"
 
+    echo -e "Network Latest Block Height: ${GREEN}$network_height${RESET}"
     echo -e "Local Node Block Height: ${GREEN}$local_height${RESET}"
     echo -e "\n${YELLOW}Please run the following command to apply the changes after exiting the script:${RESET}"
     echo -e "${GREEN}source ~/.bash_profile${RESET}"

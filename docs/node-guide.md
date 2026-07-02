@@ -22,19 +22,35 @@ make install
 
 ```bash
 MONIKER="your-moniker"
-limonatad init "$MONIKER" --chain-id limonata_10777-1
-curl -s https://limonata.xyz/genesis.json -o ~/.limonatad/config/genesis.json
-limonatad genesis validate-genesis
+LIMONATA_HOME="$HOME/.limonatad"
+limonatad --home "$LIMONATA_HOME" init "$MONIKER" --chain-id limonata_10777-1
+curl -s https://limonata.xyz/genesis.json -o "$LIMONATA_HOME/config/genesis.json"
+limonatad --home "$LIMONATA_HOME" genesis validate-genesis
 ```
 
 ## Network config
 
 ```bash
-CFG=~/.limonatad/config/config.toml
-APP=~/.limonatad/config/app.toml
+CFG="$HOME/.limonatad/config/config.toml"
+APP="$HOME/.limonatad/config/app.toml"
 sed -i 's#^persistent_peers =.*#persistent_peers = "4b154368aab24cb5b31c927efd50c73d0f4f9799@142.127.103.79:26656"#' "$CFG"
 sed -i 's/^type = "flood"/type = "app"/' "$CFG"
 sed -i 's/^minimum-gas-prices = .*/minimum-gas-prices = "0aLIMO"/' "$APP"
+```
+
+Optional validator-friendly settings:
+
+```bash
+# Keep tx indexing enabled:
+sed -i 's/^indexer = .*/indexer = "kv"/' "$CFG"
+
+# Or disable tx indexing for lower disk/IO:
+sed -i 's/^indexer = .*/indexer = "null"/' "$CFG"
+
+# Custom pruning for normal validators:
+sed -i 's/^pruning = .*/pruning = "custom"/' "$APP"
+sed -i 's/^pruning-keep-recent = .*/pruning-keep-recent = "100"/' "$APP"
+sed -i 's/^pruning-interval = .*/pruning-interval = "19"/' "$APP"
 ```
 
 Port 26656 (P2P) harus publicly reachable.
@@ -42,8 +58,8 @@ Port 26656 (P2P) harus publicly reachable.
 ## Start
 
 ```bash
-limonatad start --chain-id limonata_10777-1 --evm.evm-chain-id 10777 --minimum-gas-prices 0aLIMO
-limonatad status 2>&1 | grep -o '"catching_up":[a-z]*'
+limonatad start --home "$HOME/.limonatad" --chain-id limonata_10777-1 --evm.evm-chain-id 10777 --minimum-gas-prices 0aLIMO
+curl -s http://127.0.0.1:26657/status | jq '.result.sync_info'
 ```
 
 Installer Valley of memasang ini sebagai systemd service `limonatad.service`.
@@ -51,12 +67,12 @@ Installer Valley of memasang ini sebagai systemd service `limonatad.service`.
 ## Validator
 
 ```bash
-limonatad keys add operator            # simpan mnemonic offline
+limonatad --home "$HOME/.limonatad" keys add operator            # simpan mnemonic offline
 # fund via https://faucet.limonata.xyz
-limonatad comet show-validator         # pubkey untuk validator.json
-limonatad tx staking create-validator validator.json \
+limonatad --home "$HOME/.limonatad" comet show-validator         # pubkey untuk validator.json
+limonatad --home "$HOME/.limonatad" tx staking create-validator validator.json \
   --from operator --chain-id limonata_10777-1 --gas auto --gas-adjustment 1.3 --fees 0aLIMO -y
-limonatad query staking validator <cosmosvaloper1...>
+limonatad --home "$HOME/.limonatad" query staking validator <cosmosvaloper1...>
 ```
 
 `validator.json`: pubkey dari `comet show-validator`, amount dalam aLIMO
@@ -68,4 +84,4 @@ Setelah aktif: kirim alamat operator + valoper ke tim Limonata untuk delegasi st
 
 - Snapshot resmi — sync from genesis.
 - Cosmovisor / on-chain upgrade flow.
-- RPC publik + explorer — status node dicek dari RPC lokal.
+- Explorer.
