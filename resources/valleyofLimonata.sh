@@ -149,22 +149,21 @@ function get_local_rpc_port() {
     awk -F: '/laddr = "tcp:\/\/127\.0\.0\.1:/ {gsub(/".*/, "", $3); print $3; exit}' "$cfg"
 }
 
-function get_local_height() {
+function get_local_status_json() {
     local port
     port=$(get_local_rpc_port)
     if [ -z "$port" ]; then
         return
     fi
-    curl -m 5 -s "http://127.0.0.1:${port}/status" | jq -r '.result.sync_info.latest_block_height // empty' 2>/dev/null
+    curl -m 5 -s "http://127.0.0.1:${port}/status"
+}
+
+function get_local_height() {
+    get_local_status_json | jq -r '.result.sync_info.latest_block_height // empty' 2>/dev/null
 }
 
 function get_local_catching_up() {
-    local port
-    port=$(get_local_rpc_port)
-    if [ -z "$port" ]; then
-        return
-    fi
-    curl -m 5 -s "http://127.0.0.1:${port}/status" | jq -r '.result.sync_info.catching_up // empty' 2>/dev/null
+    get_local_status_json | jq -r '.result.sync_info.catching_up // empty' 2>/dev/null
 }
 
 function prompt_back_or_continue() {
@@ -285,11 +284,25 @@ function add_peers() {
 }
 
 function show_node_status() {
-    node_height=$(get_local_height)
+    local port status_json node_height catching_up network_height
+    port=$(get_local_rpc_port)
+    if [ -z "$port" ]; then
+        echo -e "${RED}Cannot find local RPC port in $LIMONATA_HOME/config/config.toml. Deploy the node first.${RESET}"
+        echo -e "${YELLOW}Press Enter to go back to Valley of Limonata main menu${RESET}"
+        read -r
+        menu
+        return
+    fi
+
+    status_json=$(get_local_status_json)
+    node_height=$(echo "$status_json" | jq -r '.result.sync_info.latest_block_height // empty' 2>/dev/null)
     if [ -z "$node_height" ]; then
-        echo -e "${RED}Cannot reach local node RPC. Is ${LIMONATA_SERVICE_NAME}.service running?${RESET}"
+        echo -e "${RED}Cannot reach local node RPC at http://127.0.0.1:${port}/status. Is ${LIMONATA_SERVICE_NAME}.service running?${RESET}"
     else
-        catching_up=$(get_local_catching_up)
+        echo -e "${CYAN}Local RPC status: curl http://127.0.0.1:${port}/status | jq${RESET}"
+        echo "$status_json" | jq .
+        echo
+        catching_up=$(echo "$status_json" | jq -r '.result.sync_info.catching_up // empty' 2>/dev/null)
         [ -z "$catching_up" ] && catching_up="unknown"
         echo "Local Limonata node block height: $node_height"
         network_height=$(get_network_height)
@@ -623,6 +636,10 @@ function menu() {
     [ -z "$local_height" ] && local_height="N/A (node not running)"
     network_height=$(get_network_height)
     [ -z "$network_height" ] && network_height="N/A ($LIMONATA_EVM_RPC unavailable)"
+    block_gap="N/A"
+    if [[ "$network_height" =~ ^[0-9]+$ && "$local_height" =~ ^[0-9]+$ ]]; then
+        block_gap=$((network_height - local_height))
+    fi
     echo -e "${ORANGE}Valley of Limonata Testnet${RESET}"
     echo "Main Menu:"
     echo -e "${GREEN}1. Node Interactions:${RESET}"
@@ -649,6 +666,7 @@ function menu() {
 
     echo -e "Network Latest Block Height: ${GREEN}$network_height${RESET}"
     echo -e "Local Node Block Height: ${GREEN}$local_height${RESET}"
+    echo -e "Block Difference: ${YELLOW}$block_gap${RESET}"
     echo -e "\n${YELLOW}Please run the following command to apply the changes after exiting the script:${RESET}"
     echo -e "${GREEN}source ~/.bash_profile${RESET}"
     echo -e "${YELLOW}This ensures the environment variables are set in your current bash session.${RESET}"
