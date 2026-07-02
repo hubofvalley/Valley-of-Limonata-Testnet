@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0",
+  "network": "limonata-testnet",
+  "human_name": "Valley of Limonata - Testnet",
+  "last_updated": "2026-07-02",
+  "source_of_truth": "github.com/hubofvalley/Valley-of-Limonata-Testnet (resources/*.sh)",
+  "verification_status": "needs_live_verification",
+  "verification_note": "Initial contract seeded from https://limonata.xyz/VALIDATOR.md. Live service state, binary version pinning, and sync data still need server-side validation. Guide publishes only 'latest' release, no pinned version tag yet.",
+  "chain": {
+    "chain_spec": "testnet",
+    "chain_id": "limonata_10777-1",
+    "evm_chain_id": 10777,
+    "consensus_default_rpc_port": 26657,
+    "consensus_default_p2p_port": 26656,
+    "evm_default_rpc_port": 8545,
+    "evm_default_ws_port": 8546,
+    "api_default_port": 1317,
+    "grpc_default_port": 9090,
+    "denom": "aLIMO",
+    "decimals": 18,
+    "go_version": "1.26"
+  },
+  "components": {
+    "validator": {
+      "name": "limonata-testnet-validator",
+      "role": "validator",
+      "version_model": "direct_component_versions",
+      "version_note": "Single binary (cosmos/evm evmd alias). No separate execution client. x/mint disabled; zero-fee transactions.",
+      "consensus": {
+        "binary": "limonatad",
+        "version_current": "latest",
+        "release_repo": "https://github.com/Limonata-Blockchain/limonata",
+        "release_artifact": "limonatad-linux-amd64.tar.gz",
+        "install_source": "resources/limonata_node_install_testnet.sh",
+        "update_source": "resources/limonata_update.sh",
+        "needs_live_verification": true
+      },
+      "services": {
+        "consensus": "limonatad"
+      },
+      "home_dir": "$HOME/.limonatad",
+      "binary_install_dir": "/usr/local/bin",
+      "cosmovisor": {
+        "used": false,
+        "note": "Official guide does not mention cosmovisor or on-chain upgrades yet."
+      }
+    }
+  },
+  "network_facts": {
+    "genesis_url": "https://limonata.xyz/genesis.json",
+    "persistent_peers": "4b154368aab24cb5b31c927efd50c73d0f4f9799@142.127.103.79:26656",
+    "faucet_url": "https://faucet.limonata.xyz",
+    "public_rpc": "UNKNOWN",
+    "snapshot_url": "UNKNOWN",
+    "explorer_url": "UNKNOWN"
+  }
+}

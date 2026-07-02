@@ -1,0 +1,62 @@
+# Valley of Limonata - Testnet
+
+Interactive terminal tool by **Grand Valley** to deploy and manage a Limonata testnet validator node.
+
+## System Requirements
+
+| Category  | Requirements |
+| --------- | ------------ |
+| CPU       | 2+ vCPU      |
+| RAM       | 4+ GB        |
+| Storage   | 50+ GB SSD   |
+| Bandwidth | 100+ MBit/s  |
+
+- Chain: `Limonata Testnet`
+- Chain ID: `limonata_10777-1` (EVM chain ID: `10777`, hex `0x2a19`)
+- Native denom: `aLIMO` (1 LIMO = 10^18 aLIMO)
+- Binary: `limonatad` (cosmos/evm single binary — no separate execution client)
+- Service: `limonatad.service`
+- Genesis: https://limonata.xyz/genesis.json
+- Faucet: https://faucet.limonata.xyz
+
+Network notes: no staking inflation (x/mint disabled) — validators earn transaction
+fees + commission; transactions are zero-fee (gas sponsored by protocol); testnet
+tokens are valueless.
+
+## Run
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/main/resources/valleyofLimonata.sh)
+```
+
+## Documentation
+
+- **[Usage guide — every menu option explained](docs/usage.md)**
+- [Manual node guide (commands behind the menu)](docs/node-guide.md)
+
+## Features
+
+- Deploy/re-deploy Limonata node (prebuilt binary or build from source, custom port prefix, UFW, systemd)
+- Update Limonata binary to the latest release
+- Add/reset persistent peers
+- Node status (block height, catching_up) and live logs
+- Create/recover operator key, show validator consensus pubkey
+- Create validator (guided `validator.json` + `tx staking create-validator`)
+- Query balance, delegate tokens, query validator status
+- Backup validator key, restart/stop/delete node
+
+## Recommended validator flow
+
+1. `1a` Deploy node, wait until `1d` shows `catching_up: false`
+2. `2a` Create operator key, fund it via https://faucet.limonata.xyz
+3. `2c` Create validator
+4. `3d` Backup `priv_validator_key.json`
+5. Send operator + valoper addresses to the Limonata team for stake delegation
+
+## Connect with Grand Valley
+
+- X: https://x.com/bacvalley
+- GitHub: https://github.com/hubofvalley
+- Email: letsbuidltogether@grandvalleys.com
+
+**Let's Buidl Limonata Together - Grand Valley**
