@@ -5,7 +5,7 @@
   "last_updated": "2026-07-02",
   "source_of_truth": "github.com/hubofvalley/Valley-of-Limonata-Testnet (resources/*.sh)",
   "verification_status": "needs_live_verification",
-  "verification_note": "Initial contract seeded from https://limonata.xyz/VALIDATOR.md. Live service state, binary version pinning, and sync data still need server-side validation. Guide publishes only 'latest' release, no pinned version tag yet.",
+  "verification_note": "Initial contract seeded from https://limonata.xyz/VALIDATOR.md. Release tag pinned from upstream GitHub release; live service state and sync data still need server-side validation.",
   "chain": {
     "chain_spec": "testnet",
     "chain_id": "limonata_10777-1",
@@ -28,7 +28,7 @@
       "version_note": "Single binary (cosmos/evm evmd alias). No separate execution client. x/mint disabled; zero-fee transactions.",
       "consensus": {
         "binary": "limonatad",
-        "version_current": "latest",
+        "version_current": "limonata-testnet-v0.2.0",
         "release_repo": "https://github.com/Limonata-Blockchain/limonata",
         "release_artifact": "limonatad-linux-amd64.tar.gz",
         "install_source": "resources/limonata_node_install_testnet.sh",
