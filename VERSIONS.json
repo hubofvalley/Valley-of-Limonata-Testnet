@@ -2,10 +2,10 @@
   "schema_version": "1.0",
   "network": "limonata-testnet",
   "human_name": "Valley of Limonata - Testnet",
-  "last_updated": "2026-07-02",
+  "last_updated": "2026-08-09",
   "source_of_truth": "github.com/hubofvalley/Valley-of-Limonata-Testnet (resources/*.sh)",
   "verification_status": "needs_live_verification",
-  "verification_note": "Initial contract seeded from https://limonata.xyz/VALIDATOR.md. Release tag pinned from upstream GitHub release; live service state and sync data still need server-side validation.",
+  "verification_note": "Updated from https://limonata.xyz/VALIDATOR.md and upstream release metadata on 2026-08-09. Binary release, state-sync behaviour, service state, and sync data still need server-side validation.",
   "chain": {
     "chain_spec": "testnet",
     "chain_id": "limonata_10777-1",
@@ -25,10 +25,10 @@
       "name": "limonata-testnet-validator",
       "role": "validator",
       "version_model": "direct_component_versions",
-      "version_note": "Single binary (cosmos/evm evmd alias). No separate execution client. x/mint disabled; zero-fee transactions.",
+      "version_note": "Single binary (cosmos/evm evmd alias). No separate execution client. x/mint disabled; staking transactions require a gas price of 1000000000aLIMO.",
       "consensus": {
         "binary": "limonatad",
-        "version_current": "limonata-testnet-v0.2.0",
+        "version_current": "limonata-v0.3.6",
         "release_repo": "https://github.com/Limonata-Blockchain/limonata",
         "release_artifact": "limonatad-linux-amd64.tar.gz",
         "install_source": "resources/limonata_node_install_testnet.sh",
@@ -51,6 +51,7 @@
     "persistent_peers": "4b154368aab24cb5b31c927efd50c73d0f4f9799@142.127.103.79:26656",
     "faucet_url": "https://faucet.limonata.xyz",
     "public_rpc": "https://rpc.limonata.xyz",
+    "state_sync_rpc": "https://cosmos-rpc.limonata.xyz",
     "snapshot_url": "UNKNOWN",
     "explorer_url": "UNKNOWN"
   }

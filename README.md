@@ -19,9 +19,10 @@ Interactive terminal tool by **Grand Valley** to deploy and manage a Limonata te
 - Genesis: https://limonata.xyz/genesis.json
 - Faucet: https://faucet.limonata.xyz
 
-Network notes: no staking inflation (x/mint disabled) — validators earn transaction
-fees + commission; transactions are zero-fee (gas sponsored by protocol); testnet
-tokens are valueless.
+Network notes: no staking inflation (`x/mint` disabled) — validators earn a share
+of network transaction fees plus commission. Protocol-sponsored gas does not apply
+to staking transactions; staking commands require a gas price of
+`1000000000aLIMO`. Testnet tokens are valueless.
 
 ## Run
 
@@ -36,8 +37,8 @@ bash <(curl -s https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-
 
 ## Features
 
-- Deploy/re-deploy Limonata node (prebuilt binary or build from source, custom port prefix, UFW, systemd)
-- Update Limonata binary to the latest release
+- Deploy/re-deploy Limonata node (prebuilt or source, validated ports, optional state sync, UFW, systemd)
+- Verify and update the Limonata binary with automatic rollback on service failure
 - Add/reset persistent peers
 - Node status (block height, catching_up) and live logs
 - Create/recover operator key, show validator consensus pubkey
@@ -48,10 +49,11 @@ bash <(curl -s https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-
 ## Recommended validator flow
 
 1. `1a` Deploy node, wait until `1d` shows `catching_up: false`
-2. `2a` Create operator key, fund it via https://faucet.limonata.xyz
-3. `2c` Create validator
-4. `3d` Backup `priv_validator_key.json`
-5. Send operator + valoper addresses to the Limonata team for stake delegation
+2. `3d` Backup `priv_validator_key.json` immediately
+3. `2a` Create operator key, fund it via https://faucet.limonata.xyz
+4. `2c` Review and submit the create-validator transaction
+5. Build a reliable track record, then apply at https://limonata.xyz/#validator
+   with the valoper address and a new, never-funded grant-wallet address
 
 ## Connect with Grand Valley
 
@@ -60,3 +62,5 @@ bash <(curl -s https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-
 - Email: letsbuidltogether@grandvalleys.com
 
 **Let's Buidl Limonata Together - Grand Valley**
+
+last updated by: John
