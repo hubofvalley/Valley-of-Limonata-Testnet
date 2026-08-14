@@ -426,13 +426,13 @@ function create_operator_key() {
         1)
             read -r -p "Enter key name (default 'operator'): " keyname
             keyname=${keyname:-operator}
-            limonata_cmd keys add "$keyname" --keyring-backend test
+            limonata_cmd keys add "$keyname"
             echo -e "\n${RED}WRITE DOWN THE MNEMONIC ABOVE AND STORE IT OFFLINE. It will not be shown again.${RESET}"
             ;;
         2)
             read -r -p "Enter key name (default 'operator'): " keyname
             keyname=${keyname:-operator}
-            limonata_cmd keys add "$keyname" --recover --keyring-backend test
+            limonata_cmd keys add "$keyname" --recover
             ;;
         3)
             menu
@@ -474,7 +474,7 @@ function create_validator() {
     read -r -p "Enter your key name (default 'operator'): " KEY_NAME
     KEY_NAME=${KEY_NAME:-operator}
     KEY_NAME=$(echo "$KEY_NAME" | tr -d '\r')
-    if ! limonata_cmd keys show "$KEY_NAME" -a --keyring-backend test >/dev/null 2>&1; then
+    if ! limonata_cmd keys show "$KEY_NAME" >/dev/null; then
         echo -e "${RED}Key '$KEY_NAME' was not found in the local keyring. Create or recover it with menu 2a first.${RESET}"
         menu
         return
@@ -588,7 +588,6 @@ function create_validator() {
 
     if limonata_cmd tx staking create-validator "$VALIDATOR_JSON" \
         --from "$KEY_NAME" \
-        --keyring-backend test \
         --chain-id "$LIMONATA_CHAIN_ID" \
         --gas auto --gas-adjustment 1.4 --gas-prices "$LIMONATA_STAKING_GAS_PRICE" -y; then
         echo -e "\n${GREEN}Create-validator transaction submitted successfully.${RESET}"
@@ -614,7 +613,7 @@ function query_balance() {
         1)
             read -r -p "Enter key name (default 'operator'): " keyname
             keyname=${keyname:-operator}
-            address=$(limonata_cmd keys show "$keyname" -a --keyring-backend test 2>/dev/null)
+            address=$(limonata_cmd keys show "$keyname" -a)
             if [ -z "$address" ]; then
                 echo -e "${RED}Key '$keyname' not found in keyring.${RESET}"
                 menu
@@ -652,7 +651,7 @@ function delegate_tokens() {
 
     read -r -p "Enter your key name (default 'operator'): " KEY_NAME
     KEY_NAME=${KEY_NAME:-operator}
-    if ! limonata_cmd keys show "$KEY_NAME" -a --keyring-backend test >/dev/null 2>&1; then
+    if ! limonata_cmd keys show "$KEY_NAME" >/dev/null; then
         echo -e "${RED}Key '$KEY_NAME' was not found in the local keyring.${RESET}"
         menu
         return
@@ -666,7 +665,7 @@ function delegate_tokens() {
 
     case $CHOICE in
         1)
-            VALOPER=$(limonata_cmd keys show "$KEY_NAME" --bech val -a --keyring-backend test 2>/dev/null)
+            VALOPER=$(limonata_cmd keys show "$KEY_NAME" --bech val -a)
             if [ -z "$VALOPER" ]; then
                 read -r -p "Could not derive valoper from key '$KEY_NAME'. Enter your valoper address: " VALOPER
             fi
@@ -723,7 +722,6 @@ function delegate_tokens() {
 
     if limonata_cmd tx staking delegate "$VALOPER" "${AMOUNT}aLIMO" \
          --from "$KEY_NAME" \
-         --keyring-backend test \
          --chain-id "$LIMONATA_CHAIN_ID" \
          --gas auto --gas-adjustment 1.4 --gas-prices "$LIMONATA_STAKING_GAS_PRICE" -y; then
          echo -e "${GREEN}Delegation transaction submitted successfully.${RESET}"
@@ -741,7 +739,7 @@ function query_validator_status() {
     if [ -z "$VALOPER" ]; then
         read -r -p "Enter key name (default 'operator'): " keyname
         keyname=${keyname:-operator}
-        VALOPER=$(limonata_cmd keys show "$keyname" --bech val -a --keyring-backend test 2>/dev/null)
+        VALOPER=$(limonata_cmd keys show "$keyname" --bech val -a)
     fi
     if ! [[ "$VALOPER" =~ ^cosmosvaloper1[0-9a-z]+$ ]]; then
         echo -e "${RED}No valid cosmosvaloper1... address is available.${RESET}"
