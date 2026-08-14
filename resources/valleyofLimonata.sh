@@ -163,7 +163,13 @@ LIMONATA_MONIKER=$(echo "$LIMONATA_MONIKER" | tr -d '\r')
 
 
 function limonata_cmd() {
-    limonatad --home "$LIMONATA_HOME" "$@"
+    local port
+    port=$(get_local_rpc_port)
+    if [[ "$1" == "tx" || "$1" == "query" ]] && [ -n "$port" ]; then
+        limonatad --home "$LIMONATA_HOME" --node "tcp://localhost:$port" "$@"
+    else
+        limonatad --home "$LIMONATA_HOME" "$@"
+    fi
 }
 
 function hex_to_dec() {
