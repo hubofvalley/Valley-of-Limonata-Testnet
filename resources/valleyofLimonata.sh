@@ -412,13 +412,13 @@ function create_operator_key() {
         1)
             read -r -p "Enter key name (default 'operator'): " keyname
             keyname=${keyname:-operator}
-            limonata_cmd keys add "$keyname"
+            limonata_cmd keys add "$keyname" --keyring-backend test
             echo -e "\n${RED}WRITE DOWN THE MNEMONIC ABOVE AND STORE IT OFFLINE. It will not be shown again.${RESET}"
             ;;
         2)
             read -r -p "Enter key name (default 'operator'): " keyname
             keyname=${keyname:-operator}
-            limonata_cmd keys add "$keyname" --recover
+            limonata_cmd keys add "$keyname" --recover --keyring-backend test
             ;;
         3)
             menu
@@ -459,7 +459,7 @@ function create_validator() {
 
     read -r -p "Enter your key name (default 'operator'): " KEY_NAME
     KEY_NAME=${KEY_NAME:-operator}
-    if ! limonata_cmd keys show "$KEY_NAME" -a >/dev/null 2>&1; then
+    if ! limonata_cmd keys show "$KEY_NAME" -a --keyring-backend test >/dev/null 2>&1; then
         echo -e "${RED}Key '$KEY_NAME' was not found in the local keyring. Create or recover it with menu 2a first.${RESET}"
         menu
         return
@@ -598,7 +598,7 @@ function query_balance() {
         1)
             read -r -p "Enter key name (default 'operator'): " keyname
             keyname=${keyname:-operator}
-            address=$(limonata_cmd keys show "$keyname" -a 2>/dev/null)
+            address=$(limonata_cmd keys show "$keyname" -a --keyring-backend test 2>/dev/null)
             if [ -z "$address" ]; then
                 echo -e "${RED}Key '$keyname' not found in keyring.${RESET}"
                 menu
@@ -636,7 +636,7 @@ function delegate_tokens() {
 
     read -r -p "Enter your key name (default 'operator'): " KEY_NAME
     KEY_NAME=${KEY_NAME:-operator}
-    if ! limonata_cmd keys show "$KEY_NAME" -a >/dev/null 2>&1; then
+    if ! limonata_cmd keys show "$KEY_NAME" -a --keyring-backend test >/dev/null 2>&1; then
         echo -e "${RED}Key '$KEY_NAME' was not found in the local keyring.${RESET}"
         menu
         return
@@ -650,7 +650,7 @@ function delegate_tokens() {
 
     case $CHOICE in
         1)
-            VALOPER=$(limonata_cmd keys show "$KEY_NAME" --bech val -a 2>/dev/null)
+            VALOPER=$(limonata_cmd keys show "$KEY_NAME" --bech val -a --keyring-backend test 2>/dev/null)
             if [ -z "$VALOPER" ]; then
                 read -r -p "Could not derive valoper from key '$KEY_NAME'. Enter your valoper address: " VALOPER
             fi
@@ -724,7 +724,7 @@ function query_validator_status() {
     if [ -z "$VALOPER" ]; then
         read -r -p "Enter key name (default 'operator'): " keyname
         keyname=${keyname:-operator}
-        VALOPER=$(limonata_cmd keys show "$keyname" --bech val -a 2>/dev/null)
+        VALOPER=$(limonata_cmd keys show "$keyname" --bech val -a --keyring-backend test 2>/dev/null)
     fi
     if ! [[ "$VALOPER" =~ ^cosmosvaloper1[0-9a-z]+$ ]]; then
         echo -e "${RED}No valid cosmosvaloper1... address is available.${RESET}"
