@@ -176,7 +176,7 @@ function get_local_rpc_port() {
     if [ ! -f "$cfg" ]; then
         return
     fi
-    awk -F: '/laddr = "tcp:\/\/127\.0\.0\.1:/ {gsub(/".*/, "", $3); print $3; exit}' "$cfg"
+    awk '/^\[rpc\]/ {in_rpc=1} /^\[/ && !/^\[rpc\]/ {in_rpc=0} in_rpc && /laddr = "tcp:\/\// {split($0, a, ":"); gsub(/".*/, "", a[3]); print a[3]; exit}' "$cfg"
 }
 
 function get_local_status_json() {
