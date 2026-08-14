@@ -193,7 +193,9 @@ function get_local_height() {
 }
 
 function get_local_catching_up() {
-    get_local_status_json | jq -r '.result.sync_info.catching_up // empty' 2>/dev/null
+    local val
+    val=$(get_local_status_json | jq -r '.result.sync_info.catching_up' 2>/dev/null)
+    echo "${val:-true}"
 }
 
 function prompt_back_or_continue() {
@@ -368,8 +370,10 @@ function show_node_status() {
         echo -e "${CYAN}Local RPC status: curl http://127.0.0.1:${port}/status | jq${RESET}"
         echo "$status_json" | jq .
         echo
-        catching_up=$(echo "$status_json" | jq -r '.result.sync_info.catching_up // empty' 2>/dev/null)
-        [ -z "$catching_up" ] && catching_up="unknown"
+        catching_up=$(echo "$status_json" | jq -r '.result.sync_info.catching_up' 2>/dev/null)
+        if [ "$catching_up" = "null" ] || [ -z "$catching_up" ]; then
+            catching_up="unknown"
+        fi
         echo "Local Limonata node block height: $node_height"
         network_height=$(get_network_height)
         if [ -n "$network_height" ]; then
