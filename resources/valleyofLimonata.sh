@@ -152,6 +152,16 @@ source "$HOME/.bash_profile"
 LIMONATA_HOME=${LIMONATA_HOME:-$HOME/.limonatad}
 LIMONATA_EVM_RPC=${LIMONATA_EVM_RPC:-https://rpc.limonata.xyz}
 
+# Strip trailing carriage returns (CRLF) from all config variables
+LIMONATA_HOME=$(echo "$LIMONATA_HOME" | tr -d '\r')
+LIMONATA_EVM_RPC=$(echo "$LIMONATA_EVM_RPC" | tr -d '\r')
+LIMONATA_CHAIN_ID=$(echo "$LIMONATA_CHAIN_ID" | tr -d '\r')
+LIMONATA_EVM_CHAIN_ID=$(echo "$LIMONATA_EVM_CHAIN_ID" | tr -d '\r')
+LIMONATA_STAKING_GAS_PRICE=$(echo "$LIMONATA_STAKING_GAS_PRICE" | tr -d '\r')
+LIMONATA_SERVICE_NAME=$(echo "$LIMONATA_SERVICE_NAME" | tr -d '\r')
+LIMONATA_MONIKER=$(echo "$LIMONATA_MONIKER" | tr -d '\r')
+
+
 function limonata_cmd() {
     limonatad --home "$LIMONATA_HOME" "$@"
 }
@@ -463,6 +473,7 @@ function create_validator() {
 
     read -r -p "Enter your key name (default 'operator'): " KEY_NAME
     KEY_NAME=${KEY_NAME:-operator}
+    KEY_NAME=$(echo "$KEY_NAME" | tr -d '\r')
     if ! limonata_cmd keys show "$KEY_NAME" -a --keyring-backend test >/dev/null 2>&1; then
         echo -e "${RED}Key '$KEY_NAME' was not found in the local keyring. Create or recover it with menu 2a first.${RESET}"
         menu
@@ -577,6 +588,7 @@ function create_validator() {
 
     if limonata_cmd tx staking create-validator "$VALIDATOR_JSON" \
         --from "$KEY_NAME" \
+        --keyring-backend test \
         --chain-id "$LIMONATA_CHAIN_ID" \
         --gas auto --gas-adjustment 1.4 --gas-prices "$LIMONATA_STAKING_GAS_PRICE" -y; then
         echo -e "\n${GREEN}Create-validator transaction submitted successfully.${RESET}"
@@ -710,13 +722,14 @@ function delegate_tokens() {
     fi
 
     if limonata_cmd tx staking delegate "$VALOPER" "${AMOUNT}aLIMO" \
-        --from "$KEY_NAME" \
-        --chain-id "$LIMONATA_CHAIN_ID" \
-        --gas auto --gas-adjustment 1.4 --gas-prices "$LIMONATA_STAKING_GAS_PRICE" -y; then
-        echo -e "${GREEN}Delegation transaction submitted successfully.${RESET}"
-    else
-        echo -e "${RED}Delegation transaction failed. Review the error above.${RESET}"
-    fi
+         --from "$KEY_NAME" \
+         --keyring-backend test \
+         --chain-id "$LIMONATA_CHAIN_ID" \
+         --gas auto --gas-adjustment 1.4 --gas-prices "$LIMONATA_STAKING_GAS_PRICE" -y; then
+         echo -e "${GREEN}Delegation transaction submitted successfully.${RESET}"
+     else
+         echo -e "${RED}Delegation transaction failed. Review the error above.${RESET}"
+     fi
 
     echo -e "${YELLOW}Press Enter to go back to main menu${RESET}"
     read -r
