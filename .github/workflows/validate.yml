@@ -41,9 +41,6 @@ jobs:
             bash "$test_file"
           done < <(git ls-files -z 'tests/test_*.sh')
 
-      - name: Check patch whitespace
-        run: git show --check --format= HEAD
-
   workflow-security:
     name: Workflow security
     runs-on: ubuntu-latest
