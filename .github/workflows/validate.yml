@@ -1,0 +1,74 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  repository-validation:
+    name: Repository validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check Bash syntax
+        run: git ls-files -z '*.sh' | xargs -0 -r -n1 bash -n
+
+      - name: Run ShellCheck
+        run: git ls-files -z '*.sh' | xargs -0 -r shellcheck --severity=error
+
+      - name: Validate JSON
+        run: git ls-files -z '*.json' | xargs -0 -r -n1 jq empty
+
+      - name: Run repository tests
+        shell: bash
+        run: |
+          while IFS= read -r -d '' test_file; do
+            bash "$test_file"
+          done < <(git ls-files -z 'tests/test_*.sh')
+
+  workflow-security:
+    name: Workflow security
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install verified actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          version='1.7.12'
+          archive="actionlint_${version}_linux_amd64.tar.gz"
+          url="https://github.com/rhysd/actionlint/releases/download/v${version}/${archive}"
+          curl -fsSLo "/tmp/${archive}" "$url"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/${archive}" | sha256sum --check
+          tar -xzf "/tmp/${archive}" -C /tmp actionlint
+          /tmp/actionlint -version
+
+      - name: Lint GitHub Actions workflows
+        run: /tmp/actionlint -color
+
+      - name: Audit GitHub Actions security with zizmor
+        uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
+        with:
+          advanced-security: false
+          inputs: ./.github/
+          version: 1.29.0
