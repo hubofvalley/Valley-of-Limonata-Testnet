@@ -12,6 +12,7 @@ Valley pins fresh installs to the official Limonata release:
 - artifact: `limonatad-linux-amd64.tar.gz`
 - SHA-256: `39ff376963498de120604c273d50751afc005ebeec9cbcca88c0f732eff56125`
 - release-signing fingerprint: `A45380198F390AF69126AE12E4ECEC477C1735FB`
+- operator-facing binary path: `$HOME/go/bin/limonatad`
 
 The upstream v0.3.6 release documents a mandatory coordinated upgrade at block
 `1,650,000`, but it also deliberately preserves legacy behavior before the
@@ -61,14 +62,17 @@ git rev-parse HEAD
 make install
 ```
 
+Both the prebuilt and source paths converge on `$HOME/go/bin/limonatad` before
+Cosmovisor is initialized.
+
 ## Initialise the node and fetch genesis
 
 ```bash
 MONIKER="your-moniker"
 LIMONATA_HOME="$HOME/.limonatad"
-limonatad --home "$LIMONATA_HOME" init "$MONIKER" --chain-id limonata_10777-1
+$HOME/go/bin/limonatad --home "$LIMONATA_HOME" init "$MONIKER" --chain-id limonata_10777-1
 curl -fsSL https://limonata.xyz/genesis.json -o "$LIMONATA_HOME/config/genesis.json"
-limonatad --home "$LIMONATA_HOME" genesis validate-genesis
+$HOME/go/bin/limonatad --home "$LIMONATA_HOME" genesis validate-genesis
 ```
 
 ## Cosmovisor layout
@@ -83,6 +87,16 @@ $HOME/.limonatad/cosmovisor/
   upgrades/
   backup/
 ```
+
+The user-facing command remains:
+
+```text
+$HOME/go/bin/limonatad
+  -> $HOME/.limonatad/cosmovisor/current/bin/limonatad
+```
+
+That matches the Valley of Story pattern: operators use the normal binary name
+from `~/go/bin`, while Cosmovisor owns the active executable behind the symlink.
 
 For a full replay from block 1, Valley pre-stages the same v0.3.6 binary under
 the Limonata-specific upgrade names registered by the v0.3.6 source:
@@ -180,20 +194,20 @@ curl -s http://127.0.0.1:26657/status | jq '.result.sync_info'
 
 ## Updating a Valley deployment
 
-Do not replace `/usr/local/bin/limonatad` directly on a new Valley deployment;
-it is a symlink to `cosmovisor/current/bin/limonatad`. Menu option `1b` detects
-this and refuses direct replacement. A future coordinated upgrade must be staged
+Do not replace `$HOME/go/bin/limonatad` directly on a new Valley deployment; it
+is a symlink to `cosmovisor/current/bin/limonatad`. Menu option `1b` detects this
+and refuses direct replacement. A future coordinated upgrade must be staged
 under the exact on-chain upgrade name from reviewed release metadata.
 
 ## Create a validator
 
 ```bash
-limonatad --home "$HOME/.limonatad" keys add operator
-limonatad --home "$HOME/.limonatad" comet show-validator
-limonatad --home "$HOME/.limonatad" tx staking create-validator validator.json \
+$HOME/go/bin/limonatad --home "$HOME/.limonatad" keys add operator
+$HOME/go/bin/limonatad --home "$HOME/.limonatad" comet show-validator
+$HOME/go/bin/limonatad --home "$HOME/.limonatad" tx staking create-validator validator.json \
   --from operator --chain-id limonata_10777-1 \
   --gas auto --gas-adjustment 1.4 --gas-prices 1000000000aLIMO -y
-limonatad --home "$HOME/.limonatad" query staking validator <cosmosvaloper1...>
+$HOME/go/bin/limonatad --home "$HOME/.limonatad" query staking validator <cosmosvaloper1...>
 ```
 
 Store every mnemonic offline. In `validator.json`, use the public key returned by
