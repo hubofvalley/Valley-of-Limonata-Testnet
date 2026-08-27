@@ -47,7 +47,8 @@
         "mode": "coordinated",
         "upgrade_name": "encmempool-strict-concentration-v1",
         "upgrade_height": 1650000,
-        "state_breaking": true,
+        "consensus_breaking": true,
+        "state_breaking": "not_asserted_by_upstream_release",
         "early_activation": "forbidden_for_live_validator",
         "replay_from_genesis_with_target_binary": true
       },
