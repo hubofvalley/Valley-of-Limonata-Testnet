@@ -19,6 +19,10 @@ readonly GO_VERSION="1.26.5"
 readonly GO_LINUX_AMD64_SHA256="5c2c3b16caefa1d968a94c1daca04a7ca301a496d9b086e17ad77bb81393f053"
 readonly GO_ROOT="$HOME/.local/go-${GO_VERSION}"
 readonly COSMOVISOR_BIN="/usr/local/bin/cosmovisor"
+readonly LIMONATA_BIN_DIR="$HOME/go/bin"
+readonly LIMONATA_BIN="$LIMONATA_BIN_DIR/limonatad"
+
+export PATH="$LIMONATA_BIN_DIR:$PATH"
 
 # v0.3.6 contains the historical Limonata upgrade handlers and is explicitly
 # designed to replay pre-v0.3.6 history byte-for-byte. Pre-stage the same pinned
@@ -46,6 +50,7 @@ LOGO="
 echo "$LOGO"
 echo "Pinned release: ${LIMONATA_RELEASE} (${LIMONATA_RELEASE_COMMIT})"
 echo "Fresh installs use this replay-compatible release from block 1 under Cosmovisor."
+echo "User-facing binary path: ${LIMONATA_BIN}"
 
 prompt_short_yes_no() {
     local prompt=$1 default_value=$2 answer
@@ -139,11 +144,16 @@ sudo systemctl stop "$LIMONATA_SERVICE_NAME" 2>/dev/null || true
 sudo systemctl disable "$LIMONATA_SERVICE_NAME" 2>/dev/null || true
 sudo rm -f "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service" 2>/dev/null || true
 sudo rm -f /usr/local/bin/limonatad 2>/dev/null || true
+rm -f "$LIMONATA_BIN" 2>/dev/null || true
 sudo rm -rf "$HOME/.limonatad" 2>/dev/null || true
 sed -i "/LIMONATA_/d" "$HOME/.bash_profile" 2>/dev/null || true
 
 sudo apt update -y
 sudo apt install -y curl git jq bc build-essential gcc unzip wget lz4 openssl gnupg ca-certificates
+mkdir -p "$LIMONATA_BIN_DIR"
+if ! grep -Fqx 'export PATH="$HOME/go/bin:$PATH"' "$HOME/.bash_profile" 2>/dev/null; then
+    echo 'export PATH="$HOME/go/bin:$PATH"' >> "$HOME/.bash_profile"
+fi
 
 WORKDIR=$(mktemp -d)
 cleanup() {
@@ -243,11 +253,11 @@ build_pinned_source() {
     fi
 
     PATH="$GO_ROOT/bin:$PATH" CGO_ENABLED=1 make -C "$source_dir" install
-    if [ ! -x "$HOME/go/bin/limonatad" ]; then
-        echo "Source build did not produce $HOME/go/bin/limonatad"
+    if [ ! -x "$LIMONATA_BIN" ]; then
+        echo "Source build did not produce $LIMONATA_BIN"
         exit 1
     fi
-    install -m 0755 "$HOME/go/bin/limonatad" "$STAGED_BINARY"
+    install -m 0755 "$LIMONATA_BIN" "$STAGED_BINARY"
 }
 
 if [[ "$INSTALL_METHOD" =~ ^[Ss]$ ]]; then
@@ -263,9 +273,9 @@ if ! grep -Eq '(^|[^0-9])v?0\.3\.6([^0-9]|$)' <<<"$VERSION_OUTPUT"; then
     exit 1
 fi
 
-# Install a temporary direct binary for init/config commands. It becomes a symlink
-# to Cosmovisor's current binary after the layout is initialized.
-sudo install -m 0755 "$STAGED_BINARY" /usr/local/bin/limonatad
+# Put the operator-facing binary in ~/go/bin, matching the Valley of Story UX.
+# After Cosmovisor initialization this path becomes a symlink to current/bin.
+install -m 0755 "$STAGED_BINARY" "$LIMONATA_BIN"
 
 {
     echo "export LIMONATA_MONIKER=\"$LIMONATA_MONIKER\""
@@ -290,9 +300,9 @@ if [[ "$SETUP_UFW" =~ ^[Yy]$ ]]; then
 fi
 
 # Initialize using the pinned v0.3.6 binary, then fetch and validate live genesis.
-limonatad --home "$LIMONATA_HOME" init "$LIMONATA_MONIKER" --chain-id limonata_10777-1
+"$LIMONATA_BIN" --home "$LIMONATA_HOME" init "$LIMONATA_MONIKER" --chain-id limonata_10777-1
 curl -fsSL https://limonata.xyz/genesis.json -o "$LIMONATA_HOME/config/genesis.json"
-limonatad --home "$LIMONATA_HOME" genesis validate-genesis
+"$LIMONATA_BIN" --home "$LIMONATA_HOME" genesis validate-genesis
 
 CFG="$LIMONATA_HOME/config/config.toml"
 APP="$LIMONATA_HOME/config/app.toml"
@@ -367,7 +377,7 @@ export DAEMON_NAME=limonatad
 export DAEMON_HOME="$LIMONATA_HOME"
 export DAEMON_DATA_BACKUP_DIR="$LIMONATA_HOME/cosmovisor/backup"
 mkdir -p "$DAEMON_DATA_BACKUP_DIR"
-"$COSMOVISOR_BIN" init /usr/local/bin/limonatad
+"$COSMOVISOR_BIN" init "$LIMONATA_BIN"
 mkdir -p "$LIMONATA_HOME/cosmovisor/upgrades"
 
 for upgrade_name in "${HISTORICAL_UPGRADES[@]}"; do
@@ -376,10 +386,10 @@ for upgrade_name in "${HISTORICAL_UPGRADES[@]}"; do
     install -m 0755 "$LIMONATA_HOME/cosmovisor/genesis/bin/limonatad" "$upgrade_bin_dir/limonatad"
 done
 
-sudo rm -f /usr/local/bin/limonatad
-sudo ln -s "$LIMONATA_HOME/cosmovisor/current/bin/limonatad" /usr/local/bin/limonatad
+rm -f "$LIMONATA_BIN"
+ln -s "$LIMONATA_HOME/cosmovisor/current/bin/limonatad" "$LIMONATA_BIN"
 
-if [ ! -x "$(readlink -f /usr/local/bin/limonatad)" ]; then
+if [ ! -x "$(readlink -f "$LIMONATA_BIN")" ]; then
     echo "Cosmovisor current binary symlink is invalid. Refusing to create the service."
     exit 1
 fi
@@ -421,8 +431,9 @@ sudo systemctl restart "$LIMONATA_SERVICE_NAME"
 
 if systemctl is-active --quiet "$LIMONATA_SERVICE_NAME"; then
     echo "Node installation and Cosmovisor service started successfully!"
-    echo "Current binary: $(readlink -f /usr/local/bin/limonatad)"
-    limonatad --home "$LIMONATA_HOME" version || true
+    echo "CLI binary: $LIMONATA_BIN"
+    echo "Current binary: $(readlink -f "$LIMONATA_BIN")"
+    "$LIMONATA_BIN" --home "$LIMONATA_HOME" version || true
     echo "Monitor sync status with: curl -s http://127.0.0.1:${LIMONATA_PORT}657/status | jq '.result.sync_info'"
 else
     echo "Node installation failed. Please check the logs for more information."
