@@ -56,12 +56,15 @@
         "consensus": "limonatad"
       },
       "home_dir": "$HOME/.limonatad",
-      "binary_install_dir": "/usr/local/bin",
+      "binary_install_dir": "$HOME/go/bin",
+      "binary_path": "$HOME/go/bin/limonatad",
       "cosmovisor": {
         "used": true,
         "version": "v1.7.1",
         "binary": "/usr/local/bin/cosmovisor",
         "genesis_binary": "limonata-v0.3.6",
+        "operator_binary_symlink": "$HOME/go/bin/limonatad",
+        "operator_binary_target": "$HOME/.limonatad/cosmovisor/current/bin/limonatad",
         "allow_download_binaries": false,
         "download_must_have_checksum": true,
         "restart_after_upgrade": true,
