@@ -19,7 +19,8 @@ On first run, the script shows its privacy and safety statement before asking fo
 `~/.bash_profile`. Run the script as the same user that owns `~/.limonatad`.
 
 The wrapper forces `LIMONATA_HOME=$HOME/.limonatad` for CLI calls because the
-upstream binary can otherwise fall back to its `evmd` default home.
+upstream binary can otherwise fall back to its `evmd` default home. New Valley
+installs expose the command at `~/go/bin/limonatad`, matching Valley of Story.
 
 ## Navigation
 
@@ -35,8 +36,8 @@ upstream binary can otherwise fall back to its `evmd` default home.
 
 | Option | What it does | Risk | When to use |
 |---|---|---|---|
-| **1a. Deploy/Re-deploy Limonata Node** | Installs the reviewed `limonata-v0.3.6` target, verifies the official artifact, installs pinned Cosmovisor, initializes the node, configures the network, and starts the systemd service through Cosmovisor. Existing installs require `REDEPLOY`. | **Destructive on re-deploy:** removes `~/.limonatad`, including local block data and `priv_validator_key.json`. | First setup or an intentional clean reinstall. |
-| **1b. Update Limonata Binary** | On new Valley installs, detects the Cosmovisor-managed `current` symlink and refuses direct binary replacement. If the current target is already v0.3.6 it exits cleanly. The legacy direct-binary path remains only for older Valley installs. | Direct replacement of a Cosmovisor `current` binary is blocked. | Check whether a current Valley node needs a reviewed upgrade. |
+| **1a. Deploy/Re-deploy Limonata Node** | Installs the reviewed `limonata-v0.3.6` target, verifies the official artifact, installs pinned Cosmovisor, places the operator-facing command at `~/go/bin/limonatad`, initializes the node, configures the network, and starts the systemd service through Cosmovisor. Existing installs require `REDEPLOY`. | **Destructive on re-deploy:** removes `~/.limonatad`, including local block data and `priv_validator_key.json`. | First setup or an intentional clean reinstall. |
+| **1b. Update Limonata Binary** | On new Valley installs, detects that `~/go/bin/limonatad` points to Cosmovisor `current` and refuses direct binary replacement. If the current target is already v0.3.6 it exits cleanly. The legacy direct-binary path remains only for older Valley installs. | Direct replacement of a Cosmovisor `current` binary is blocked. | Check whether a current Valley node needs a reviewed upgrade. |
 | **1c. Add Peers** | Edits `persistent_peers` in `~/.limonatad/config/config.toml`. | Configuration change. | Peer/connectivity repair. |
 | **1d. Show Node Status** | Reads the local RPC status and compares local height with the public Limonata RPC. | Read-only. | Check sync progress. |
 | **1e. Show Node Logs** | Live-tails the configured systemd unit. | Read-only. | Debugging or watching sync. |
@@ -76,11 +77,19 @@ Valley currently pins:
 - release-signing fingerprint: `A45380198F390AF69126AE12E4ECEC477C1735FB`
 - Cosmovisor: `v1.7.1`
 - Valley installer Go toolchain: `1.26.5`
+- operator-facing binary: `$HOME/go/bin/limonatad`
 
 The v0.3.6 source intentionally preserves legacy behavior before its coordinated
 upgrade gate and upstream reports successful `genesis -> head` replay without
 app-hash divergence. Valley therefore puts v0.3.6 in
 `~/.limonatad/cosmovisor/genesis/bin/limonatad` for a fresh deployment.
+
+The command users run is:
+
+```text
+$HOME/go/bin/limonatad
+  -> $HOME/.limonatad/cosmovisor/current/bin/limonatad
+```
 
 For a full block-1 replay, the installer also pre-stages the same pinned binary
 under these Limonata upgrade names:
@@ -99,9 +108,8 @@ validator coordination rules. Upstream v0.3.6 is a consensus-breaking coordinate
 upgrade at block `1,650,000`; an already-running validator should not activate it
 outside the network's coordinated upgrade flow.
 
-Cosmovisor auto-downloads are disabled. `/usr/local/bin/limonatad` points to
-`cosmovisor/current/bin/limonatad`; do not replace that symlink with an arbitrary
-binary.
+Cosmovisor auto-downloads are disabled. Do not replace `~/go/bin/limonatad`
+with an arbitrary binary; it must remain the symlink to Cosmovisor `current`.
 
 ## Recommended first-time flow
 
