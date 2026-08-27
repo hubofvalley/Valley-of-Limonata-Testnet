@@ -21,12 +21,19 @@ grep -Fq 'readonly LIMONATA_ARTIFACT_SHA256="39ff376963498de120604c273d50751afc0
 grep -Fq 'readonly LIMONATA_SIGNING_KEY_FINGERPRINT="A45380198F390AF69126AE12E4ECEC477C1735FB"' "$installer" || fail "signing key fingerprint is not pinned"
 grep -Fq 'readonly COSMOVISOR_VERSION="v1.7.1"' "$installer" || fail "Cosmovisor version is not pinned"
 grep -Fq 'readonly GO_VERSION="1.26.5"' "$installer" || fail "installer Go toolchain is not pinned"
+grep -Fq 'readonly LIMONATA_BIN_DIR="$HOME/go/bin"' "$installer" || fail "Limonata binary dir is not ~/go/bin"
+grep -Fq 'readonly LIMONATA_BIN="$LIMONATA_BIN_DIR/limonatad"' "$installer" || fail "Limonata binary path is not ~/go/bin/limonatad"
 
 if grep -Fq '/releases/latest/' "$installer"; then
     fail "fresh installer must not select a mutable latest release"
 fi
 
-grep -Fq '"$COSMOVISOR_BIN" init /usr/local/bin/limonatad' "$installer" || fail "Cosmovisor genesis init missing"
+if grep -Fq 'sudo install -m 0755 "$STAGED_BINARY" /usr/local/bin/limonatad' "$installer"; then
+    fail "fresh installer must not install limonatad into /usr/local/bin"
+fi
+
+grep -Fq '"$COSMOVISOR_BIN" init "$LIMONATA_BIN"' "$installer" || fail "Cosmovisor genesis init does not use ~/go/bin/limonatad"
+grep -Fq 'ln -s "$LIMONATA_HOME/cosmovisor/current/bin/limonatad" "$LIMONATA_BIN"' "$installer" || fail "operator binary symlink missing"
 grep -Fq 'Environment="DAEMON_ALLOW_DOWNLOAD_BINARIES=false"' "$installer" || fail "Cosmovisor auto-download must be disabled"
 grep -Fq 'Environment="DAEMON_DOWNLOAD_MUST_HAVE_CHECKSUM=true"' "$installer" || fail "Cosmovisor checksum policy missing"
 grep -Fq 'ExecStart=$COSMOVISOR_BIN run start' "$installer" || fail "systemd does not start through Cosmovisor"
@@ -45,11 +52,15 @@ jq -e '.components.validator.consensus.version_current == "limonata-v0.3.6"' "$v
 jq -e '.components.validator.consensus.release_commit == "effa377d673fc6f0fb307a78ca54e037e53060f7"' "$versions" >/dev/null || fail "VERSIONS commit mismatch"
 jq -e '.components.validator.consensus.artifact_sha256 == "39ff376963498de120604c273d50751afc005ebeec9cbcca88c0f732eff56125"' "$versions" >/dev/null || fail "VERSIONS artifact digest mismatch"
 jq -e '.components.validator.consensus.signature.fingerprint == "A45380198F390AF69126AE12E4ECEC477C1735FB"' "$versions" >/dev/null || fail "VERSIONS signing fingerprint mismatch"
+jq -e '.components.validator.binary_install_dir == "$HOME/go/bin"' "$versions" >/dev/null || fail "VERSIONS binary dir mismatch"
+jq -e '.components.validator.binary_path == "$HOME/go/bin/limonatad"' "$versions" >/dev/null || fail "VERSIONS binary path mismatch"
+jq -e '.components.validator.cosmovisor.operator_binary_symlink == "$HOME/go/bin/limonatad"' "$versions" >/dev/null || fail "VERSIONS operator symlink mismatch"
 jq -e '.components.validator.cosmovisor.used == true' "$versions" >/dev/null || fail "VERSIONS Cosmovisor flag mismatch"
 jq -e '.components.validator.cosmovisor.allow_download_binaries == false' "$versions" >/dev/null || fail "VERSIONS must disable Cosmovisor downloads"
 jq -e '.components.validator.upgrade.consensus_breaking == true' "$versions" >/dev/null || fail "coordinated upgrade semantics missing"
 jq -e '.components.validator.upgrade.state_breaking == "not_asserted_by_upstream_release"' "$versions" >/dev/null || fail "state-breaking claim must remain non-asserted"
 
+grep -Fq 'LIMONATA_BIN="$HOME/go/bin/limonatad"' "$updater" || fail "updater does not use ~/go/bin/limonatad"
 grep -Fq 'This node is managed by Cosmovisor.' "$updater" || fail "updater lacks Cosmovisor guard"
 grep -Fq 'Refusing a direct binary replacement on a Cosmovisor-managed node.' "$updater" || fail "updater can directly replace Cosmovisor current binary"
 
