@@ -1,11 +1,11 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "network": "limonata-testnet",
   "human_name": "Valley of Limonata - Testnet",
-  "last_updated": "2026-08-09",
+  "last_updated": "2026-08-27",
   "source_of_truth": "github.com/hubofvalley/Valley-of-Limonata-Testnet (resources/*.sh)",
   "verification_status": "needs_live_verification",
-  "verification_note": "Updated from https://limonata.xyz/VALIDATOR.md and upstream release metadata on 2026-08-09. Binary release, state-sync behaviour, service state, and sync data still need server-side validation.",
+  "verification_note": "Pinned to the official limonata-v0.3.6 release and source commit. Upstream documents replay-safe genesis-to-head behavior for this binary. The new Valley Cosmovisor fresh-install path still requires a clean-host live smoke test before verification_status can become verified.",
   "chain": {
     "chain_spec": "testnet",
     "chain_id": "limonata_10777-1",
@@ -18,31 +18,65 @@
     "grpc_default_port": 9090,
     "denom": "aLIMO",
     "decimals": 18,
-    "go_version": "1.26"
+    "upstream_go_mod": "1.25.9",
+    "installer_go_toolchain": "1.26.5"
   },
   "components": {
     "validator": {
       "name": "limonata-testnet-validator",
       "role": "validator",
-      "version_model": "direct_component_versions",
-      "version_note": "Single binary (cosmos/evm evmd alias). No separate execution client. x/mint disabled; staking transactions require a gas price of 1000000000aLIMO.",
+      "version_model": "reviewed_release_contract",
+      "version_note": "Single cosmos/evm binary. Fresh Valley installs run the replay-compatible v0.3.6 binary under Cosmovisor from genesis; no separate execution client is used.",
       "consensus": {
         "binary": "limonatad",
         "version_current": "limonata-v0.3.6",
+        "release_commit": "effa377d673fc6f0fb307a78ca54e037e53060f7",
         "release_repo": "https://github.com/Limonata-Blockchain/limonata",
         "release_artifact": "limonatad-linux-amd64.tar.gz",
+        "artifact_sha256": "39ff376963498de120604c273d50751afc005ebeec9cbcca88c0f732eff56125",
+        "signature": {
+          "type": "gpg",
+          "fingerprint": "A45380198F390AF69126AE12E4ECEC477C1735FB",
+          "signed_object": "SHA256SUMS.txt"
+        },
         "install_source": "resources/limonata_node_install_testnet.sh",
         "update_source": "resources/limonata_update.sh",
         "needs_live_verification": true
+      },
+      "upgrade": {
+        "mode": "coordinated",
+        "upgrade_name": "encmempool-strict-concentration-v1",
+        "upgrade_height": 1650000,
+        "consensus_breaking": true,
+        "state_breaking": "not_asserted_by_upstream_release",
+        "early_activation": "forbidden_for_live_validator",
+        "replay_from_genesis_with_target_binary": true
       },
       "services": {
         "consensus": "limonatad"
       },
       "home_dir": "$HOME/.limonatad",
-      "binary_install_dir": "/usr/local/bin",
+      "binary_install_dir": "$HOME/go/bin",
+      "binary_path": "$HOME/go/bin/limonatad",
       "cosmovisor": {
-        "used": false,
-        "note": "Official guide does not mention cosmovisor or on-chain upgrades yet."
+        "used": true,
+        "version": "v1.7.1",
+        "binary": "/usr/local/bin/cosmovisor",
+        "genesis_binary": "limonata-v0.3.6",
+        "operator_binary_symlink": "$HOME/go/bin/limonatad",
+        "operator_binary_target": "$HOME/.limonatad/cosmovisor/current/bin/limonatad",
+        "allow_download_binaries": false,
+        "download_must_have_checksum": true,
+        "restart_after_upgrade": true,
+        "historical_upgrade_slots_use_replay_safe_v0_3_6": true,
+        "historical_upgrade_names": [
+          "valgrant-v1",
+          "encmempool-threshold-vpcap-v1",
+          "gassponsor-security-caps-v1",
+          "encmempool-transparent-dkg-v1",
+          "encmempool-dkg-dealing-retention-v1",
+          "encmempool-strict-concentration-v1"
+        ]
       }
     }
   },

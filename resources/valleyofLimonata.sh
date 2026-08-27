@@ -12,6 +12,10 @@ RESET='\033[0m'
 # Load saved Valley settings without prompting before the privacy notice.
 # shellcheck disable=SC1091
 source "$HOME/.bash_profile" 2>/dev/null
+# Keep the operator-facing Limonata binary consistent with Valley of Story.
+# This works before and after a fresh install because PATH may contain a directory
+# that does not exist yet; the installer creates it when needed.
+export PATH="$HOME/go/bin:$PATH"
 
 LIMONATA_HOME=${LIMONATA_HOME:-$HOME/.limonatad}
 LIMONATA_EVM_RPC=${LIMONATA_EVM_RPC:-https://rpc.limonata.xyz}
@@ -126,7 +130,7 @@ ${YELLOW}| Category  | Requirements     |
 - current chain: ${CYAN}Limonata Testnet${RESET}
 - current chain ID: ${CYAN}${LIMONATA_CHAIN_ID}${RESET} (EVM chain ID: ${CYAN}${LIMONATA_EVM_CHAIN_ID}${RESET})
 - native denom: ${CYAN}aLIMO${RESET} (1 LIMO = 10^18 aLIMO)
-- binary: ${CYAN}limonatad${RESET} (${CYAN}${binary_version}${RESET})"
+- binary: ${CYAN}$HOME/go/bin/limonatad${RESET} (${CYAN}${binary_version}${RESET})"
 }
 
 # Display LOGO and wait for user input to continue
@@ -160,7 +164,6 @@ LIMONATA_EVM_CHAIN_ID=$(echo "$LIMONATA_EVM_CHAIN_ID" | tr -d '\r')
 LIMONATA_STAKING_GAS_PRICE=$(echo "$LIMONATA_STAKING_GAS_PRICE" | tr -d '\r')
 LIMONATA_SERVICE_NAME=$(echo "$LIMONATA_SERVICE_NAME" | tr -d '\r')
 LIMONATA_MONIKER=$(echo "$LIMONATA_MONIKER" | tr -d '\r')
-
 
 function limonata_cmd() {
     local port
@@ -273,6 +276,7 @@ function deploy_limonata_node() {
 
     echo -e "\n${GREEN}Directories:${RESET}"
     echo -e "  • ${CYAN}$HOME/.limonatad${RESET}"
+    echo -e "  • ${CYAN}$HOME/go/bin/limonatad${RESET} (operator-facing binary symlink)"
 
     echo -e "\n${YELLOW}3. REQUIREMENTS:${RESET}"
     echo "- CPU: 2+ vCPU, RAM: 4+ GB, Storage: 50+ GB SSD"
@@ -311,15 +315,17 @@ function deploy_limonata_node() {
     sleep 2
 
     LIMONATA_REDEPLOY_CONFIRMED=1 bash <(curl -s https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/main/resources/limonata_node_install_testnet.sh)
+    hash -r
     menu
 }
 
 function update_limonata_binary() {
-    echo -e "${YELLOW}You are about to update your Limonata node binary to the latest release.${RESET}"
+    echo -e "${YELLOW}You are about to check the reviewed Limonata binary target and upgrade path.${RESET}"
     if ! prompt_back_or_continue; then
         return
     fi
     bash <(curl -s https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/main/resources/limonata_update.sh)
+    hash -r
     menu
 }
 
@@ -817,8 +823,10 @@ function delete_limonata_node() {
     sudo rm -f "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service"
     sudo systemctl daemon-reload
     sudo rm -rf "$LIMONATA_HOME"
+    rm -f "$HOME/go/bin/limonatad"
     sudo rm -f /usr/local/bin/limonatad
     sed -i "/LIMONATA_/d" "$HOME/.bash_profile"
+    hash -r
     echo -e "${RED}Limonata node deleted. Remember to clean up any keys you backed up elsewhere.${RESET}"
     menu
 }
@@ -844,8 +852,8 @@ function show_guidelines() {
     echo " - 2c Create validator -> build a reliable track record"
     echo " - Apply at https://limonata.xyz/#validator with the valoper address and a new, never-funded grant wallet"
     echo -e "${GREEN}Menu options:${RESET}"
-    echo " - 1a Deploy/re-deploy the node; re-deploy permanently replaces existing node data."
-    echo " - 1b Update the binary to the latest official release."
+    echo " - 1a Deploy/re-deploy the node with the reviewed binary and Cosmovisor; re-deploy permanently replaces existing node data."
+    echo " - 1b Check the reviewed binary target; Cosmovisor-managed nodes refuse direct replacement."
     echo " - 1c Add peers manually or restore the official peer."
     echo " - 1d Show local RPC status, sync state, and the network height gap."
     echo " - 1e Follow the node service logs; press Ctrl+C to return."
@@ -863,8 +871,9 @@ function show_guidelines() {
     echo " - 5 Show these guidelines."
     echo " - 6 Exit the tool."
     echo -e "${GREEN}Operations:${RESET}"
+    echo " - Operator-facing limonatad path: $HOME/go/bin/limonatad."
     echo " - After deploying or updating, use 1d (status) and 1e (logs) to verify the node."
-    echo " - Run 'source ~/.bash_profile' after exiting to refresh environment variables."
+    echo " - Run 'source ~/.bash_profile' after exiting to refresh saved environment variables in your login shell."
     echo " - Stop the service before deleting or redeploying to prevent lock errors."
     echo -e "${GREEN}Safety:${RESET}"
     echo " - Never share private keys, mnemonics, or RPC auth details."

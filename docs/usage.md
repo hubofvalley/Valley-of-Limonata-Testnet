@@ -1,6 +1,6 @@
 # Valley of Limonata — Usage Guide
 
-How to run the tool, how to navigate it, and what every menu option does.
+How to run the tool, navigate it, and understand each menu option.
 
 ## Running the tool
 
@@ -16,21 +16,19 @@ bash resources/valleyofLimonata.sh
 
 On first run, the script shows its privacy and safety statement before asking for a
 **service name** (default `limonatad`). It saves the validated name to
-`~/.bash_profile` and will not ask again. Run the script as the same user that owns
-`~/.limonatad` to avoid permission issues.
+`~/.bash_profile`. Run the script as the same user that owns `~/.limonatad`.
 
 The wrapper forces `LIMONATA_HOME=$HOME/.limonatad` for CLI calls because the
-upstream binary can otherwise fall back to its `evmd` default home.
+upstream binary can otherwise fall back to its `evmd` default home. New Valley
+installs expose the command at `~/go/bin/limonatad`, matching Valley of Story.
 
 ## Navigation
 
-- Choose an option by typing the number + letter together (e.g. `1a`), or the number
-  first, Enter, then the letter.
-- Normal confirmations require the full word `yes` or `no`; press Enter to accept
-  defaults shown in parentheses. Destructive actions require the exact words
-  `REDEPLOY` or `DELETE`, and replacing an existing key backup requires `OVERWRITE`.
-- After exiting, run `source ~/.bash_profile` so environment variables set by the
-  script apply to your current shell session.
+- Choose an option by typing the number + letter together, for example `1a`.
+- Normal confirmations require `yes` or `no`; destructive actions require the
+  exact words shown by the tool, such as `REDEPLOY` or `DELETE`.
+- After exiting, run `source ~/.bash_profile` if you want newly written variables
+  in the current shell.
 
 ## Menu options explained
 
@@ -38,67 +36,111 @@ upstream binary can otherwise fall back to its `evmd` default home.
 
 | Option | What it does | Risk | When to use |
 |---|---|---|---|
-| **1a. Deploy/Re-deploy Limonata Node** | Shows a full safety disclaimer, then asks for a moniker, validated two-digit port prefix, indexer, pruning, state sync, installation method, optional UFW settings, and service name. It installs dependencies, fetches `limonatad`, initializes the node, configures the network, and starts the service. Existing installations require typing `REDEPLOY`. | **Destructive on re-deploy:** permanently removes `~/.limonatad`, including local block data and `priv_validator_key.json`. Back up keys first. | First setup or a deliberate clean re-install. |
-| **1b. Update Limonata Binary** | Downloads and verifies the latest official release before stopping the service. It preserves the previous binary and restores it if the updated service fails to start. Node data and keys are untouched. | Service restart; brief downtime. | When upstream announces a new release. |
-| **1c. Add Peers** | Edits `persistent_peers` in `~/.limonatad/config/config.toml`: enter peers manually or reset to the official peer. Restart the node afterwards with 3a. | Configuration change. | When the node cannot find peers or after network changes. |
-| **1d. Show Node Status** | Reads the local RPC port, prints local RPC status, and compares local height with the Limonata EVM RPC. A small negative difference is normal when the local node is ahead of the public RPC. | Read-only. | Check sync progress; required before creating a validator. |
-| **1e. Show Node Logs** | Live-tails `journalctl -u limonatad -fn 100`. Press Ctrl+C to return to the menu. | Read-only. | Debugging or watching sync. |
+| **1a. Deploy/Re-deploy Limonata Node** | Installs the reviewed `limonata-v0.3.6` target, verifies the official artifact, installs pinned Cosmovisor, places the operator-facing command at `~/go/bin/limonatad`, initializes the node, configures the network, and starts the systemd service through Cosmovisor. Existing installs require `REDEPLOY`. | **Destructive on re-deploy:** removes `~/.limonatad`, including local block data and `priv_validator_key.json`. | First setup or an intentional clean reinstall. |
+| **1b. Update Limonata Binary** | On new Valley installs, detects that `~/go/bin/limonatad` points to Cosmovisor `current` and refuses direct binary replacement. If the current target is already v0.3.6 it exits cleanly. The legacy direct-binary path remains only for older Valley installs. | Direct replacement of a Cosmovisor `current` binary is blocked. | Check whether a current Valley node needs a reviewed upgrade. |
+| **1c. Add Peers** | Edits `persistent_peers` in `~/.limonatad/config/config.toml`. | Configuration change. | Peer/connectivity repair. |
+| **1d. Show Node Status** | Reads the local RPC status and compares local height with the public Limonata RPC. | Read-only. | Check sync progress. |
+| **1e. Show Node Logs** | Live-tails the configured systemd unit. | Read-only. | Debugging or watching sync. |
 
 ### 2. Validator/Key Interactions
 
 | Option | What it does | Risk | When to use |
 |---|---|---|---|
-| **2a. Create/Recover Operator Key** | Creates a new key or recovers one from an existing mnemonic. | **Key operation:** a new mnemonic is shown once; store it offline and never share it. | Before creating a validator or after reinstalling a server. |
-| **2b. Show Validator Consensus Pubkey** | Prints the consensus public key used in `validator.json`. | Read-only. | Reference or verification before validator creation. |
-| **2c. Create Validator** | Verifies the selected key and sync state, validates stake and commission values, builds `validator.json`, shows it for approval, then uses the official `1000000000aLIMO` staking gas price. | **On-chain transaction:** review every value before typing `yes`. | Once, when registering the validator. |
-| **2d. Query Balance** | Queries bank balances for a local keyring key or any address. Amounts are shown in aLIMO. | Read-only. | Verify faucet funds or inspect an address. |
-| **2e. Delegate Tokens** | Uses the selected key for self-delegation or delegates to a manually entered validator. It validates the amount and displays a final transaction review. | **On-chain transaction:** requires explicit `yes` before broadcast. | Increase self-stake or delegate a foundation grant from its separate grant wallet. |
-| **2f. Query Validator Status** | Queries bonding status, tokens, and commission by valoper address. | Read-only. | Confirm the validator is bonded or monitor stake. |
+| **2a. Create/Recover Operator Key** | Creates a local key or recovers one from a mnemonic. | **Key operation.** | Before validator creation or after deliberate recovery. |
+| **2b. Show Validator Consensus Pubkey** | Prints the consensus public key. | Read-only. | Build or verify `validator.json`. |
+| **2c. Create Validator** | Validates the selected key and sync state, builds `validator.json`, and broadcasts the staking transaction after confirmation. | **On-chain transaction.** | Once, after the node is synced. |
+| **2d. Query Balance** | Queries balances for a key or address. | Read-only. | Verify funding. |
+| **2e. Delegate Tokens** | Delegates after validation and explicit confirmation. | **On-chain transaction.** | Self-stake or delegation. |
+| **2f. Query Validator Status** | Queries bonding status, tokens, and commission. | Read-only. | Validator monitoring. |
 
 ### 3. Node Management
 
 | Option | What it does | Risk | When to use |
 |---|---|---|---|
-| **3a. Restart Limonata Node** | Restarts the configured systemd service after daemon-reload. | Brief downtime. | After configuration changes. |
-| **3b. Stop Limonata Node** | Stops the configured systemd service. | Node downtime. | Maintenance or before manual data operations. |
-| **3c. Delete Limonata Node** | Stops and disables the service, removes its unit, deletes `~/.limonatad` and the binary, and cleans `LIMONATA_*` variables. Requires typing `DELETE`. | **Destructive:** deleting without backups permanently loses the validator identity. | Deliberate decommissioning only. |
-| **3d. Backup Validator Key** | Copies `priv_validator_key.json` to `$HOME` with mode `600`. If a backup already exists, replacement requires typing `OVERWRITE`. Move the file somewhere safe and offline afterwards. | Writes a sensitive local backup file. | Immediately after deployment and before delete/re-deploy. |
+| **3a. Restart Limonata Node** | Restarts the configured Cosmovisor-backed systemd service. | Brief downtime. | After configuration changes. |
+| **3b. Stop Limonata Node** | Stops the service. | Node downtime. | Maintenance. |
+| **3c. Delete Limonata Node** | Stops/disables the service and deletes the node home and binary link after `DELETE`. | **Destructive.** | Deliberate decommission only. |
+| **3d. Backup Validator Key** | Copies `priv_validator_key.json` to `$HOME` with mode `600`. | Creates a sensitive local backup. | Immediately after deploy and before destructive work. |
 
-### 4. Show Endpoints & Useful Links
-Official Limonata links (website, validator guide, faucet, GitHub), network facts
-(chain IDs, seed peer, genesis URL), and Grand Valley contacts.
+### 4–6
 
-### 5. Show Guidelines
-In-tool summary of navigation, the recommended validator flow, and safety notes.
+Option 4 shows official endpoints and useful links. Option 5 shows the in-tool
+operator guidelines. Option 6 exits.
 
-### 6. Exit
-Leaves the script. Remember `source ~/.bash_profile`.
+## Fresh-install binary and Cosmovisor model
+
+Valley currently pins:
+
+- Limonata: `limonata-v0.3.6`
+- source commit: `effa377d673fc6f0fb307a78ca54e037e53060f7`
+- artifact SHA-256: `39ff376963498de120604c273d50751afc005ebeec9cbcca88c0f732eff56125`
+- release-signing fingerprint: `A45380198F390AF69126AE12E4ECEC477C1735FB`
+- Cosmovisor: `v1.7.1`
+- Valley installer Go toolchain: `1.26.5`
+- operator-facing binary: `$HOME/go/bin/limonatad`
+
+The v0.3.6 source intentionally preserves legacy behavior before its coordinated
+upgrade gate and upstream reports successful `genesis -> head` replay without
+app-hash divergence. Valley therefore puts v0.3.6 in
+`~/.limonatad/cosmovisor/genesis/bin/limonatad` for a fresh deployment.
+
+The command users run is:
+
+```text
+$HOME/go/bin/limonatad
+  -> $HOME/.limonatad/cosmovisor/current/bin/limonatad
+```
+
+For a full block-1 replay, the installer also pre-stages the same pinned binary
+under these Limonata upgrade names:
+
+```text
+valgrant-v1
+encmempool-threshold-vpcap-v1
+gassponsor-security-caps-v1
+encmempool-transparent-dkg-v1
+encmempool-dkg-dealing-retention-v1
+encmempool-strict-concentration-v1
+```
+
+This is specifically a **fresh/replay path**. It does not override upstream live
+validator coordination rules. Upstream v0.3.6 is a consensus-breaking coordinated
+upgrade at block `1,650,000`; an already-running validator should not activate it
+outside the network's coordinated upgrade flow.
+
+Cosmovisor auto-downloads are disabled. Do not replace `~/go/bin/limonatad`
+with an arbitrary binary; it must remain the symlink to Cosmovisor `current`.
 
 ## Recommended first-time flow
 
-1. `1a` deploy → wait until `1d` shows `catching_up: false`
-2. `3d` back up the validator key immediately
-3. `2a` create operator key → fund via https://faucet.limonata.xyz → confirm with `2d`
-4. `2c` create validator → review the transaction → confirm with `2f`
-5. Build a reliable track record, then apply at https://limonata.xyz/#validator with
-   the valoper address and a new, never-funded grant-wallet address
+1. `1a` deploy, then wait until `1d` shows `catching_up: false`.
+2. `3d` back up the validator key immediately.
+3. `2a` create the operator key, fund it from the faucet, and confirm with `2d`.
+4. `2c` create the validator and confirm with `2f`.
+5. Build a reliable track record, then follow the current Limonata validator
+   application process.
 
 ## Installer choices
 
-- **Transaction indexer ON** keeps transaction indexing enabled (`indexer = "kv"`), useful when you want transaction search/query tooling.
-- **Transaction indexer OFF** sets `indexer = "null"`, lighter on disk and IO, but transaction search is limited.
-- **Custom pruning ON** sets `pruning = "custom"`, `pruning-keep-recent = "100"`, and `pruning-interval = "19"`. This keeps only recent state needed by normal validators and prunes older state every 19 blocks to reduce disk growth.
-- **Custom pruning OFF** leaves upstream defaults unchanged.
-- **State sync ON** obtains a trusted height and hash from the official CometBFT RPC (`https://cosmos-rpc.limonata.xyz`) for a much faster initial sync. If trust data is unavailable, the installer asks before falling back to genesis sync.
-- **State sync OFF** performs a normal sync from genesis.
-- **UFW ON** asks for the current SSH port before enabling the firewall, then keeps SSH and the selected Limonata P2P port reachable.
+- **Prebuilt (`p`)**: downloads the exact v0.3.6 release, checks the pinned GPG
+  fingerprint, verifies the signed checksum file, and compares the artifact to
+  the Valley-pinned SHA-256.
+- **Source (`s`)**: clones tag `limonata-v0.3.6` and refuses to build unless it
+  resolves to the pinned full commit.
+- **Transaction indexer ON**: keeps `indexer = "kv"`; OFF uses `"null"`.
+- **Custom pruning ON**: uses `keep-recent=100` and `interval=19`.
+- **State sync ON**: starts from trusted state obtained from the official
+  CometBFT RPC. If you explicitly want to execute from block 1, choose state
+  sync OFF.
+- **UFW ON**: preserves the SSH port you provide and opens the selected Limonata
+  P2P port.
 
 ## Safety notes
 
-- Never share private keys or mnemonics; the script never sends data off your server.
-- Testnet tokens are valueless; stake delegated by the Limonata team remains team property.
-- Staking transactions require the official minimum gas price of `1000000000aLIMO`.
-- Audit any script before running it — this one lives at
-  https://github.com/hubofvalley/Valley-of-Limonata-Testnet/blob/main/resources/valleyofLimonata.sh
+- Never share private keys or mnemonics.
+- Testnet tokens are valueless.
+- Staking transactions use `1000000000aLIMO` gas price in the Valley flow.
+- Audit operational scripts before running them, especially destructive deploy,
+  delete, and upgrade paths.
 
 last updated by: John
