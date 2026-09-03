@@ -23,6 +23,46 @@ LIMONATA_CHAIN_ID=${LIMONATA_CHAIN_ID:-limonata_10777-1}
 LIMONATA_EVM_CHAIN_ID=${LIMONATA_EVM_CHAIN_ID:-10777}
 LIMONATA_STAKING_GAS_PRICE=${LIMONATA_STAKING_GAS_PRICE:-1000000000aLIMO}
 LIMONATA_TARGET_VERSION=${LIMONATA_TARGET_VERSION:-limonata-v0.3.6}
+readonly VALLEY_INSTALLER_SHA256="e42a89a398bbd0430eceb782c59ce652444e99be7452c7d26263342820082a26"
+readonly VALLEY_UPDATER_SHA256="356f02693b2cd39fd34ebafc57ba268ea59641944d0a8e54892202acf09cf2dc"
+VALLEY_SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+
+function is_valid_service_name() {
+    local value=${1:-}
+    [[ "$value" =~ ^[A-Za-z0-9_.@-]+$ ]]
+}
+
+function run_pinned_valley_child() {
+    local script_name=$1 expected_sha child_path actual_sha
+    shift
+
+    case "$script_name" in
+        limonata_node_install_testnet.sh) expected_sha=$VALLEY_INSTALLER_SHA256 ;;
+        limonata_update.sh) expected_sha=$VALLEY_UPDATER_SHA256 ;;
+        *)
+            echo -e "${RED}Refusing unknown Valley child script: ${script_name}${RESET}" >&2
+            return 1
+            ;;
+    esac
+
+    child_path="$VALLEY_SCRIPT_DIR/$script_name"
+    if [ ! -f "$child_path" ]; then
+        echo -e "${RED}Required Valley child script is missing: ${child_path}${RESET}" >&2
+        echo -e "${YELLOW}Run Valley of Limonata from a complete reviewed repository clone.${RESET}" >&2
+        return 1
+    fi
+
+    actual_sha=$(sha256sum "$child_path" | awk '{print $1}')
+    if [ "$actual_sha" != "$expected_sha" ]; then
+        echo -e "${RED}Valley child script integrity check failed. Refusing execution.${RESET}" >&2
+        echo "Expected: $expected_sha" >&2
+        echo "Observed: $actual_sha" >&2
+        echo "Path: $child_path" >&2
+        return 1
+    fi
+
+    env "$@" bash "$child_path"
+}
 
 LOGO="
  __      __     _  _                        __   _      _                             _
@@ -90,11 +130,18 @@ ${GREEN}Connect with Grand Valley:${RESET}
 
 function ensure_service_name() {
     local input_service
+
+    if [ -n "${LIMONATA_SERVICE_NAME:-}" ] && ! is_valid_service_name "$LIMONATA_SERVICE_NAME"; then
+        echo -e "${RED}Invalid service name loaded from environment/profile: ${LIMONATA_SERVICE_NAME}${RESET}" >&2
+        echo -e "${RED}Use letters, numbers, dots, underscores, @, or hyphens only.${RESET}" >&2
+        return 1
+    fi
+
     while [ -z "${LIMONATA_SERVICE_NAME:-}" ]; do
         echo -e "${YELLOW}Service name configuration not found.${RESET}"
         read -r -p "Enter service name (default 'limonatad'): " input_service
         input_service=${input_service:-limonatad}
-        if [[ "$input_service" =~ ^[A-Za-z0-9_.@-]+$ ]]; then
+        if is_valid_service_name "$input_service"; then
             LIMONATA_SERVICE_NAME=$input_service
         else
             echo -e "${RED}Invalid service name. Use letters, numbers, dots, underscores, @, or hyphens only.${RESET}"
@@ -140,7 +187,9 @@ echo -e "\n${YELLOW}Press Enter to continue...${RESET}"
 read -r
 
 # Ask once only after the privacy statement, then display the intro.
-ensure_service_name
+if ! ensure_service_name; then
+    exit 1
+fi
 show_intro
 echo -e "$ENDPOINTS"
 echo -e "\n${YELLOW}Press Enter to continue...${RESET}"
@@ -155,6 +204,11 @@ grep -q '^export LIMONATA_STAKING_GAS_PRICE=' "$HOME/.bash_profile" 2>/dev/null 
 source "$HOME/.bash_profile"
 LIMONATA_HOME=${LIMONATA_HOME:-$HOME/.limonatad}
 LIMONATA_EVM_RPC=${LIMONATA_EVM_RPC:-https://rpc.limonata.xyz}
+
+if ! is_valid_service_name "${LIMONATA_SERVICE_NAME:-}"; then
+    echo -e "${RED}Invalid service name after loading ~/.bash_profile. Refusing to continue.${RESET}" >&2
+    exit 1
+fi
 
 # Strip trailing carriage returns (CRLF) from all config variables
 LIMONATA_HOME=$(echo "$LIMONATA_HOME" | tr -d '\r')
@@ -257,7 +311,7 @@ function deploy_limonata_node() {
     echo -e "- This script ${GREEN}DOES NOT${RESET} send any data outside your server"
     echo "- All operations are performed locally"
     echo "- You are encouraged to audit the script at:"
-    echo -e "  ${BLUE}https://github.com/hubofvalley/Valley-of-Limonata-Testnet/blob/main/resources/limonata_node_install_testnet.sh${RESET}"
+    echo -e "  ${BLUE}${VALLEY_SCRIPT_DIR}/limonata_node_install_testnet.sh${RESET}"
 
     echo -e "\n${YELLOW}2. SYSTEM IMPACT:${RESET}"
     echo -e "${GREEN}New Service:${RESET}"
@@ -314,7 +368,9 @@ function deploy_limonata_node() {
     echo -e "${YELLOW}This may take 1-5 minutes. Please don't interrupt the process.${RESET}"
     sleep 2
 
-    LIMONATA_REDEPLOY_CONFIRMED=1 bash <(curl -s https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/main/resources/limonata_node_install_testnet.sh)
+    if ! run_pinned_valley_child limonata_node_install_testnet.sh LIMONATA_REDEPLOY_CONFIRMED=1; then
+        echo -e "${RED}Installer child script failed or was refused. No success was recorded.${RESET}"
+    fi
     hash -r
     menu
 }
@@ -324,7 +380,9 @@ function update_limonata_binary() {
     if ! prompt_back_or_continue; then
         return
     fi
-    bash <(curl -s https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/main/resources/limonata_update.sh)
+    if ! run_pinned_valley_child limonata_update.sh; then
+        echo -e "${RED}Updater child script failed or was refused. No success was recorded.${RESET}"
+    fi
     hash -r
     menu
 }

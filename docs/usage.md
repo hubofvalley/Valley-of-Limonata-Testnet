@@ -4,19 +4,23 @@ How to run the tool, navigate it, and understand each menu option.
 
 ## Running the tool
 
-```bash
-bash <(curl -s https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/main/resources/valleyofLimonata.sh)
-```
-
-Or from a local clone:
+Use a reviewed local clone:
 
 ```bash
+cd Valley-of-Limonata-Testnet
 bash resources/valleyofLimonata.sh
 ```
 
+The wrapper does not execute child scripts from mutable `main` URLs. Before
+running the bundled installer or updater it checks that file against the
+SHA-256 pinned in `resources/valleyofLimonata.sh` and refuses mismatches or
+missing files.
+
 On first run, the script shows its privacy and safety statement before asking for a
 **service name** (default `limonatad`). It saves the validated name to
-`~/.bash_profile`. Run the script as the same user that owns `~/.limonatad`.
+`~/.bash_profile`. A service name loaded from the environment/profile is subject
+to the same character allow-list and causes a fail-closed exit if invalid. Run
+the script as the same user that owns `~/.limonatad`.
 
 The wrapper forces `LIMONATA_HOME=$HOME/.limonatad` for CLI calls because the
 upstream binary can otherwise fall back to its `evmd` default home. New Valley
@@ -37,7 +41,7 @@ installs expose the command at `~/go/bin/limonatad`, matching Valley of Story.
 | Option | What it does | Risk | When to use |
 |---|---|---|---|
 | **1a. Deploy/Re-deploy Limonata Node** | Installs the reviewed `limonata-v0.3.6` target, verifies the official artifact, installs pinned Cosmovisor, places the operator-facing command at `~/go/bin/limonatad`, initializes the node, configures the network, and starts the systemd service through Cosmovisor. Existing installs require `REDEPLOY`. | **Destructive on re-deploy:** removes `~/.limonatad`, including local block data and `priv_validator_key.json`. | First setup or an intentional clean reinstall. |
-| **1b. Update Limonata Binary** | On new Valley installs, detects that `~/go/bin/limonatad` points to Cosmovisor `current` and refuses direct binary replacement. If the current target is already v0.3.6 it exits cleanly. The legacy direct-binary path remains only for older Valley installs. | Direct replacement of a Cosmovisor `current` binary is blocked. | Check whether a current Valley node needs a reviewed upgrade. |
+| **1b. Update Limonata Binary** | On new Valley installs, detects that `~/go/bin/limonatad` points to Cosmovisor `current` and refuses direct binary replacement. If the current target is already v0.3.6 it exits cleanly. The legacy direct-binary path accepts only reviewed v0.3.6 metadata and verifies the pinned signing-key fingerprint, signed checksum file, pinned artifact SHA-256, and reported version before stopping the service. | Direct replacement of a Cosmovisor `current` binary is blocked; a legacy update fails closed before service changes if release verification fails. | Check whether a current Valley node needs a reviewed upgrade. |
 | **1c. Add Peers** | Edits `persistent_peers` in `~/.limonatad/config/config.toml`. | Configuration change. | Peer/connectivity repair. |
 | **1d. Show Node Status** | Reads the local RPC status and compares local height with the public Limonata RPC. | Read-only. | Check sync progress. |
 | **1e. Show Node Logs** | Live-tails the configured systemd unit. | Read-only. | Debugging or watching sync. |
@@ -110,6 +114,8 @@ outside the network's coordinated upgrade flow.
 
 Cosmovisor auto-downloads are disabled. Do not replace `~/go/bin/limonatad`
 with an arbitrary binary; it must remain the symlink to Cosmovisor `current`.
+The Valley wrapper similarly refuses to execute its installer/updater child
+scripts unless their local SHA-256 matches its reviewed pins.
 
 ## Recommended first-time flow
 

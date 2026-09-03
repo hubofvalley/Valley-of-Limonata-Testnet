@@ -11,6 +11,8 @@ Interactive terminal tool by **Grand Valley** to deploy and manage a Limonata te
 | Storage   | 50+ GB SSD   |
 | Bandwidth | 100+ MBit/s  |
 
+Supported platform: Linux x86_64 (AMD64).
+
 - Chain: `Limonata Testnet`
 - Chain ID: `limonata_10777-1` (EVM chain ID: `10777`, hex `0x2a19`)
 - Native denom: `aLIMO` (1 LIMO = 10^18 aLIMO)
@@ -42,8 +44,13 @@ to staking transactions; staking commands require a gas price of
 
 ## Run
 
+Run the tool from a reviewed local clone. The wrapper verifies the pinned
+SHA-256 of its installer/updater child scripts before executing them; it does
+not fetch mutable scripts from the repository default branch.
+
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/main/resources/valleyofLimonata.sh)
+cd Valley-of-Limonata-Testnet
+bash resources/valleyofLimonata.sh
 ```
 
 ## Documentation
@@ -56,8 +63,9 @@ bash <(curl -s https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-
 - Deploy/re-deploy Limonata node with pinned v0.3.6, Cosmovisor, validated ports, optional state sync, UFW, and systemd
 - Keep the user-facing `limonatad` command in `~/go/bin`, symlinked to Cosmovisor `current`
 - Verify the official v0.3.6 artifact with pinned SHA-256 plus the official GPG signing fingerprint
+- Verify wrapper child scripts against pinned local SHA-256 values before execution
 - Pre-stage replay-safe v0.3.6 across known historical Cosmovisor upgrade slots for genesis sync
-- Protect Cosmovisor-managed nodes from direct replacement through the legacy updater
+- Protect Cosmovisor-managed nodes from direct replacement and verify reviewed legacy updates with the same signed-release trust contract
 - Add/reset persistent peers
 - Node status (block height, catching_up) and live logs
 - Create/recover operator key, show validator consensus pubkey
