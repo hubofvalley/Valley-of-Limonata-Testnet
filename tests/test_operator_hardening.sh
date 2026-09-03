@@ -29,6 +29,9 @@ if grep -RIEq 'raw\.githubusercontent\.com/.*/main|/releases/latest/' README.md 
 fi
 grep -Fq 'bash <(curl -fsSL' README.md || fail "README run command must remain bash process substitution"
 grep -Fq 'bash <(curl -fsSL' docs/usage.md || fail "usage run command must remain bash process substitution"
+if grep -R -Fq '/COMMIT/' README.md docs/usage.md; then
+    fail "documentation contains an unresolved wrapper commit placeholder"
+fi
 
 grep -Fq 'readonly LIMONATA_RELEASE="limonata-v0.3.6"' "$updater" || fail "legacy updater release is not pinned"
 grep -Fq 'readonly LIMONATA_ARTIFACT_SHA256="39ff376963498de120604c273d50751afc005ebeec9cbcca88c0f732eff56125"' "$updater" || fail "legacy updater artifact SHA is not pinned"
