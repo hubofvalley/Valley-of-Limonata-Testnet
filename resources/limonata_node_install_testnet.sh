@@ -7,6 +7,11 @@ if [ -z "${HOME:-}" ] || [ "$HOME" = "/" ]; then
     exit 1
 fi
 
+if [ "$(uname -s)" != "Linux" ] || [ "$(uname -m)" != "x86_64" ]; then
+    echo "This installer supports Linux x86_64 (AMD64) only."
+    exit 1
+fi
+
 readonly LIMONATA_RELEASE="limonata-v0.3.6"
 readonly LIMONATA_RELEASE_COMMIT="effa377d673fc6f0fb307a78ca54e037e53060f7"
 readonly LIMONATA_ARTIFACT="limonatad-linux-amd64.tar.gz"
@@ -252,12 +257,15 @@ build_pinned_source() {
         exit 1
     fi
 
-    PATH="$GO_ROOT/bin:$PATH" CGO_ENABLED=1 make -C "$source_dir" install
-    if [ ! -x "$LIMONATA_BIN" ]; then
-        echo "Source build did not produce $LIMONATA_BIN"
+    local build_bin_dir="$WORKDIR/source-bin"
+    local built_binary="$build_bin_dir/evmd"
+    mkdir -p "$build_bin_dir"
+    PATH="$GO_ROOT/bin:$PATH" GOBIN="$build_bin_dir" CGO_ENABLED=1 make -C "$source_dir" install
+    if [ ! -x "$built_binary" ]; then
+        echo "Source build did not produce the upstream evmd binary at $built_binary"
         exit 1
     fi
-    install -m 0755 "$LIMONATA_BIN" "$STAGED_BINARY"
+    install -m 0755 "$built_binary" "$STAGED_BINARY"
 }
 
 if [[ "$INSTALL_METHOD" =~ ^[Ss]$ ]]; then
@@ -278,7 +286,7 @@ fi
 install -m 0755 "$STAGED_BINARY" "$LIMONATA_BIN"
 
 {
-    echo "export LIMONATA_MONIKER=\"$LIMONATA_MONIKER\""
+    printf 'export LIMONATA_MONIKER=%q\n' "$LIMONATA_MONIKER"
     echo "export LIMONATA_CHAIN_ID=\"limonata_10777-1\""
     echo "export LIMONATA_EVM_CHAIN_ID=\"10777\""
     echo "export LIMONATA_PORT=\"$LIMONATA_PORT\""

@@ -2,6 +2,12 @@
 
 set -euo pipefail
 
+readonly LIMONATA_RELEASE="limonata-v0.3.6"
+readonly LIMONATA_ARTIFACT="limonatad-linux-amd64.tar.gz"
+readonly LIMONATA_ARTIFACT_SHA256="39ff376963498de120604c273d50751afc005ebeec9cbcca88c0f732eff56125"
+readonly LIMONATA_SIGNING_KEY_FINGERPRINT="A45380198F390AF69126AE12E4ECEC477C1735FB"
+readonly LIMONATA_RELEASE_BASE="https://github.com/Limonata-Blockchain/limonata/releases/download/${LIMONATA_RELEASE}"
+
 echo -e "\n--- Limonata Binary Update ---"
 
 LOGO="
@@ -16,7 +22,7 @@ echo "$LOGO"
 source "$HOME/.bash_profile" 2>/dev/null
 LIMONATA_SERVICE_NAME=${LIMONATA_SERVICE_NAME:-limonatad}
 LIMONATA_HOME=${LIMONATA_HOME:-$HOME/.limonatad}
-LIMONATA_TARGET_VERSION=${LIMONATA_TARGET_VERSION:-limonata-v0.3.6}
+LIMONATA_TARGET_VERSION="$LIMONATA_RELEASE"
 LIMONATA_BIN="$HOME/go/bin/limonatad"
 LEGACY_LIMONATA_BIN="/usr/local/bin/limonatad"
 
@@ -62,7 +68,7 @@ echo "Current version:"
 "$legacy_binary" --home "$LIMONATA_HOME" version 2>/dev/null || "$legacy_binary" version 2>/dev/null || echo "version unavailable"
 
 echo
-read -r -p "Update this legacy installation to the latest official release? (yes/no): " confirm
+read -r -p "Update this legacy installation to the reviewed ${LIMONATA_RELEASE} release? (yes/no): " confirm
 if [[ "${confirm,,}" != "yes" ]]; then
     echo "Update cancelled."
     exit 0
@@ -70,22 +76,44 @@ fi
 
 UPDATE_TMP=$(mktemp -d)
 BACKUP_BINARY="$UPDATE_TMP/limonatad.previous"
+GNUPG_HOME="$UPDATE_TMP/gnupg"
 cleanup() {
     rm -rf "$UPDATE_TMP"
 }
 trap cleanup EXIT
+mkdir -p "$GNUPG_HOME"
+chmod 700 "$GNUPG_HOME"
 
-echo "Downloading and verifying the latest official release..."
-curl -fsSL \
-    https://github.com/Limonata-Blockchain/limonata/releases/latest/download/limonatad-linux-amd64.tar.gz \
-    -o "$UPDATE_TMP/limonatad-linux-amd64.tar.gz"
-curl -fsSL \
-    https://github.com/Limonata-Blockchain/limonata/releases/latest/download/SHA256SUMS.txt \
-    -o "$UPDATE_TMP/SHA256SUMS.txt"
+echo "Downloading and verifying reviewed ${LIMONATA_RELEASE} release..."
+curl -fsSL "${LIMONATA_RELEASE_BASE}/${LIMONATA_ARTIFACT}" -o "$UPDATE_TMP/${LIMONATA_ARTIFACT}"
+curl -fsSL "${LIMONATA_RELEASE_BASE}/SHA256SUMS.txt" -o "$UPDATE_TMP/SHA256SUMS.txt"
+curl -fsSL "${LIMONATA_RELEASE_BASE}/SHA256SUMS.txt.asc" -o "$UPDATE_TMP/SHA256SUMS.txt.asc"
+curl -fsSL "${LIMONATA_RELEASE_BASE}/limonata-release-signing-key.asc" -o "$UPDATE_TMP/limonata-release-signing-key.asc"
+
+key_fingerprint=$(gpg --batch --homedir "$GNUPG_HOME" --with-colons --import-options show-only --import \
+    "$UPDATE_TMP/limonata-release-signing-key.asc" 2>/dev/null | awk -F: '$1 == "fpr" { print $10; exit }' || true)
+if [ "$key_fingerprint" != "$LIMONATA_SIGNING_KEY_FINGERPRINT" ]; then
+    echo "Release signing key fingerprint mismatch. Refusing update."
+    echo "Expected: $LIMONATA_SIGNING_KEY_FINGERPRINT"
+    echo "Observed: ${key_fingerprint:-<none>}"
+    exit 1
+fi
+
+gpg --batch --homedir "$GNUPG_HOME" --import "$UPDATE_TMP/limonata-release-signing-key.asc" >/dev/null 2>&1
+gpg --batch --homedir "$GNUPG_HOME" --verify "$UPDATE_TMP/SHA256SUMS.txt.asc" "$UPDATE_TMP/SHA256SUMS.txt"
+
+actual_sha=$(sha256sum "$UPDATE_TMP/${LIMONATA_ARTIFACT}" | awk '{print $1}')
+if [ "$actual_sha" != "$LIMONATA_ARTIFACT_SHA256" ]; then
+    echo "Pinned artifact SHA256 mismatch. Refusing update."
+    echo "Expected: $LIMONATA_ARTIFACT_SHA256"
+    echo "Observed: $actual_sha"
+    exit 1
+fi
+
 (
     cd "$UPDATE_TMP"
-    grep '  limonatad-linux-amd64.tar.gz$' SHA256SUMS.txt | sha256sum -c -
-    tar xzf limonatad-linux-amd64.tar.gz
+    grep "  ${LIMONATA_ARTIFACT}$" SHA256SUMS.txt | sha256sum -c -
+    tar xzf "$LIMONATA_ARTIFACT"
 )
 
 if [ ! -x "$UPDATE_TMP/limonatad" ]; then
@@ -94,7 +122,12 @@ if [ ! -x "$UPDATE_TMP/limonatad" ]; then
 fi
 
 echo "Target version:"
-"$UPDATE_TMP/limonatad" version
+target_version=$("$UPDATE_TMP/limonatad" version 2>/dev/null || true)
+echo "$target_version"
+if ! grep -Eq '(^|[^0-9])v?0\.3\.6([^0-9]|$)' <<<"$target_version"; then
+    echo "Verified artifact does not report the reviewed v0.3.6 target. Refusing update."
+    exit 1
+fi
 
 cp "$legacy_binary" "$BACKUP_BINARY"
 sudo systemctl stop "$LIMONATA_SERVICE_NAME"

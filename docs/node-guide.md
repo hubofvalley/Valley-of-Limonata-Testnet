@@ -21,6 +21,8 @@ divergence. Valley therefore uses v0.3.6 as the fresh-install genesis binary.
 That replay compatibility does not authorize an already-running validator to
 activate a coordinated upgrade early.
 
+The Valley installer supports Linux x86_64 (AMD64) only.
+
 ## Verify the official prebuilt binary
 
 ```bash
