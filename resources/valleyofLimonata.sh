@@ -25,7 +25,17 @@ LIMONATA_STAKING_GAS_PRICE=${LIMONATA_STAKING_GAS_PRICE:-1000000000aLIMO}
 LIMONATA_TARGET_VERSION=${LIMONATA_TARGET_VERSION:-limonata-v0.3.6}
 readonly VALLEY_INSTALLER_SHA256="e42a89a398bbd0430eceb782c59ce652444e99be7452c7d26263342820082a26"
 readonly VALLEY_UPDATER_SHA256="356f02693b2cd39fd34ebafc57ba268ea59641944d0a8e54892202acf09cf2dc"
+readonly VALLEY_SCRIPT_COMMIT="d4b100bb926b6fd0392c29b0bc0ae61dcb21468f"
+readonly VALLEY_SCRIPT_BASE="https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/${VALLEY_SCRIPT_COMMIT}/resources"
 VALLEY_SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+VALLEY_REMOTE_TMP=""
+
+cleanup_remote_children() {
+    if [ -n "${VALLEY_REMOTE_TMP:-}" ]; then
+        rm -rf "$VALLEY_REMOTE_TMP"
+    fi
+}
+trap cleanup_remote_children EXIT
 
 function is_valid_service_name() {
     local value=${1:-}
@@ -47,9 +57,14 @@ function run_pinned_valley_child() {
 
     child_path="$VALLEY_SCRIPT_DIR/$script_name"
     if [ ! -f "$child_path" ]; then
-        echo -e "${RED}Required Valley child script is missing: ${child_path}${RESET}" >&2
-        echo -e "${YELLOW}Run Valley of Limonata from a complete reviewed repository clone.${RESET}" >&2
-        return 1
+        if [ -z "${VALLEY_REMOTE_TMP:-}" ]; then
+            VALLEY_REMOTE_TMP=$(mktemp -d)
+        fi
+        child_path="$VALLEY_REMOTE_TMP/$script_name"
+        if ! curl -fsSL "${VALLEY_SCRIPT_BASE}/${script_name}" -o "$child_path"; then
+            echo -e "${RED}Required Valley child script could not be downloaded. Refusing execution.${RESET}" >&2
+            return 1
+        fi
     fi
 
     actual_sha=$(sha256sum "$child_path" | awk '{print $1}')

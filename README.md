@@ -44,14 +44,15 @@ to staking transactions; staking commands require a gas price of
 
 ## Run
 
-Run the tool from a reviewed local clone. The wrapper verifies the pinned
-SHA-256 of its installer/updater child scripts before executing them; it does
-not fetch mutable scripts from the repository default branch.
+Run the tool with the reviewed wrapper. The wrapper uses an immutable commit,
+downloads child scripts with fail-closed curl flags when needed, and verifies
+their pinned SHA-256 before executing them.
 
 ```bash
-cd Valley-of-Limonata-Testnet
-bash resources/valleyofLimonata.sh
+bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/COMMIT/resources/valleyofLimonata.sh)
 ```
+
+Replace `COMMIT` with the reviewed wrapper commit shown in the release/PR.
 
 ## Documentation
 
@@ -63,7 +64,7 @@ bash resources/valleyofLimonata.sh
 - Deploy/re-deploy Limonata node with pinned v0.3.6, Cosmovisor, validated ports, optional state sync, UFW, and systemd
 - Keep the user-facing `limonatad` command in `~/go/bin`, symlinked to Cosmovisor `current`
 - Verify the official v0.3.6 artifact with pinned SHA-256 plus the official GPG signing fingerprint
-- Verify wrapper child scripts against pinned local SHA-256 values before execution
+- Verify wrapper child scripts against pinned SHA-256 values before execution
 - Pre-stage replay-safe v0.3.6 across known historical Cosmovisor upgrade slots for genesis sync
 - Protect Cosmovisor-managed nodes from direct replacement and verify reviewed legacy updates with the same signed-release trust contract
 - Add/reset persistent peers

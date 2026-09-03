@@ -21,13 +21,14 @@ grep -Fq "readonly VALLEY_INSTALLER_SHA256=\"${installer_sha}\"" "$wrapper" || f
 grep -Fq "readonly VALLEY_UPDATER_SHA256=\"${updater_sha}\"" "$wrapper" || fail "wrapper updater SHA pin mismatch"
 grep -Fq 'sha256sum "$child_path"' "$wrapper" || fail "wrapper does not hash child scripts before execution"
 grep -Fq 'Valley child script integrity check failed. Refusing execution.' "$wrapper" || fail "wrapper lacks fail-closed child integrity guard"
+grep -Fq 'readonly VALLEY_SCRIPT_COMMIT="d4b100bb926b6fd0392c29b0bc0ae61dcb21468f"' "$wrapper" || fail "wrapper child commit is not immutable"
+grep -Fq 'curl -fsSL "${VALLEY_SCRIPT_BASE}/${script_name}"' "$wrapper" || fail "remote child download is not fail-closed"
 
 if grep -RIEq 'raw\.githubusercontent\.com/.*/main|/releases/latest/' README.md docs resources; then
     fail "mutable main/latest executable or documentation URL remains"
 fi
-if grep -Fq 'bash <(curl' "$wrapper"; then
-    fail "wrapper still uses process-substitution remote execution"
-fi
+grep -Fq 'bash <(curl -fsSL' README.md || fail "README run command must remain bash process substitution"
+grep -Fq 'bash <(curl -fsSL' docs/usage.md || fail "usage run command must remain bash process substitution"
 
 grep -Fq 'readonly LIMONATA_RELEASE="limonata-v0.3.6"' "$updater" || fail "legacy updater release is not pinned"
 grep -Fq 'readonly LIMONATA_ARTIFACT_SHA256="39ff376963498de120604c273d50751afc005ebeec9cbcca88c0f732eff56125"' "$updater" || fail "legacy updater artifact SHA is not pinned"

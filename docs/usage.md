@@ -4,17 +4,16 @@ How to run the tool, navigate it, and understand each menu option.
 
 ## Running the tool
 
-Use a reviewed local clone:
+Run the reviewed wrapper directly:
 
 ```bash
-cd Valley-of-Limonata-Testnet
-bash resources/valleyofLimonata.sh
+bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/COMMIT/resources/valleyofLimonata.sh)
 ```
 
-The wrapper does not execute child scripts from mutable `main` URLs. Before
-running the bundled installer or updater it checks that file against the
-SHA-256 pinned in `resources/valleyofLimonata.sh` and refuses mismatches or
-missing files.
+Replace `COMMIT` with the reviewed wrapper commit shown in the release/PR. The
+wrapper downloads child scripts from immutable commit URLs with `curl -fsSL`
+when run this way, then checks each file against its pinned SHA-256 and refuses
+mismatches or failed downloads. A local clone remains supported too.
 
 On first run, the script shows its privacy and safety statement before asking for a
 **service name** (default `limonatad`). It saves the validated name to
