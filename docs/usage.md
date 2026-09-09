@@ -133,9 +133,11 @@ scripts unless their local SHA-256 matches its reviewed pins.
   resolves to the pinned full commit.
 - **Transaction indexer ON**: keeps `indexer = "kv"`; OFF uses `"null"`.
 - **Custom pruning ON**: uses `keep-recent=100` and `interval=19`.
-- **State sync ON**: starts from trusted state obtained from the official
-  CometBFT RPC. If you explicitly want to execute from block 1, choose state
-  sync OFF.
+- **State sync ON**: starts from trusted state only after the official CometBFT
+  RPC and a distinct witness RPC agree on the same trusted commit. If either
+  endpoint is unhealthy, on the wrong chain, or disagrees on the hash, the
+  installer refuses state sync and offers normal genesis sync instead. If you
+  explicitly want to execute from block 1, choose state sync OFF.
 - **UFW ON**: preserves the SSH port you provide and opens the selected Limonata
   P2P port.
 
