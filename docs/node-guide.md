@@ -146,22 +146,37 @@ reachable.
 
 ## Optional state sync
 
-State sync uses the CometBFT RPC endpoint, not the EVM JSON-RPC endpoint.
+State sync uses CometBFT RPC endpoints, not the EVM JSON-RPC endpoint. Baconvalley
+requires two distinct RPC endpoints to agree on the same trusted commit before
+enabling state sync. The second endpoint is an independent witness, not a binary
+or software trust source.
 
 ```bash
 CFG="$HOME/.limonatad/config/config.toml"
-RPC="https://cosmos-rpc.limonata.xyz"
-LATEST=$(curl -fsS "$RPC/block" | jq -r '.result.block.header.height')
+PRIMARY_RPC="https://cosmos-rpc.limonata.xyz"
+WITNESS_RPC="https://limonata.rpc.t.anode.team"
+
+PRIMARY_HEIGHT=$(curl -fsS "$PRIMARY_RPC/status" | jq -r '.result.sync_info.latest_block_height')
+WITNESS_HEIGHT=$(curl -fsS "$WITNESS_RPC/status" | jq -r '.result.sync_info.latest_block_height')
+LATEST=$(( PRIMARY_HEIGHT < WITNESS_HEIGHT ? PRIMARY_HEIGHT : WITNESS_HEIGHT ))
 TRUST=$(( (LATEST - 2000) / 1000 * 1000 ))
-HASH=$(curl -fsS "$RPC/commit?height=$TRUST" | jq -r '.result.signed_header.commit.block_id.hash')
+PRIMARY_HASH=$(curl -fsS "$PRIMARY_RPC/commit?height=$TRUST" | jq -r '.result.signed_header.commit.block_id.hash')
+WITNESS_HASH=$(curl -fsS "$WITNESS_RPC/commit?height=$TRUST" | jq -r '.result.signed_header.commit.block_id.hash')
+[ "$PRIMARY_HASH" = "$WITNESS_HASH" ] || { echo "RPC disagreement; refuse state sync" >&2; exit 1; }
 
 sed -i "/^\[statesync\]/,/^\[/ { \
   s/^enable *=.*/enable = true/; \
-  s#^rpc_servers *=.*#rpc_servers = \"$RPC,$RPC\"#; \
+  s#^rpc_servers *=.*#rpc_servers = \"$PRIMARY_RPC,$WITNESS_RPC\"#; \
   s/^trust_height *=.*/trust_height = $TRUST/; \
-  s/^trust_hash *=.*/trust_hash = \"$HASH\"/; \
+  s/^trust_hash *=.*/trust_hash = \"$PRIMARY_HASH\"/; \
   s/^trust_period *=.*/trust_period = \"168h0m0s\"/ }" "$CFG"
 ```
+
+The installer additionally verifies both endpoints report
+`limonata_10777-1`, are not catching up, return the requested commit height,
+and return a valid 64-hex commit hash. Advanced operators can override the two
+RPC URLs for the installer with `LIMONATA_STATE_SYNC_PRIMARY_RPC` and
+`LIMONATA_STATE_SYNC_WITNESS_RPC`; the values must remain distinct.
 
 Choosing state sync means the node starts from a trusted state snapshot rather
 than executing every block from genesis. Disable state sync if you explicitly

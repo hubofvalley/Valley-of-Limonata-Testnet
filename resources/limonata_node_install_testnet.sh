@@ -340,36 +340,98 @@ s%address = \"localhost:9090\"%address = \"localhost:${LIMONATA_PORT}090\"%;
 s%address = \"127.0.0.1:8545\"%address = \"127.0.0.1:${LIMONATA_PORT}545\"%;
 s%ws-address = \"127.0.0.1:8546\"%ws-address = \"127.0.0.1:${LIMONATA_PORT}546\"%" "$APP"
 
-configure_state_sync() {
-    local rpc="https://cosmos-rpc.limonata.xyz" latest trust hash
+normalize_state_sync_rpc() {
+    local rpc=${1:-}
+    printf '%s' "${rpc%/}"
+}
 
-    if ! latest=$(curl -fsS --max-time 15 "$rpc/block" | jq -r '.result.block.header.height // empty'); then
-        return 1
-    fi
-    if ! [[ "$latest" =~ ^[0-9]+$ ]] || [ "$latest" -le 2000 ]; then
-        return 1
-    fi
+fetch_state_sync_rpc_height() {
+    local rpc=$1 payload network height catching_up
 
-    trust=$(( (latest - 2000) / 1000 * 1000 ))
-    if ! hash=$(curl -fsS --max-time 15 "$rpc/commit?height=$trust" | jq -r '.result.signed_header.commit.block_id.hash // empty'); then
-        return 1
-    fi
+    payload=$(curl -fsS --max-time 15 "$rpc/status") || return 1
+    network=$(jq -r '.result.node_info.network // empty' <<<"$payload")
+    height=$(jq -r '.result.sync_info.latest_block_height // empty' <<<"$payload")
+    catching_up=$(jq -r '.result.sync_info.catching_up' <<<"$payload")
+
+    [ "$network" = "limonata_10777-1" ] || return 1
+    [[ "$height" =~ ^[0-9]+$ ]] || return 1
+    [ "$height" -gt 2000 ] || return 1
+    [ "$catching_up" = "false" ] || return 1
+
+    printf '%s' "$height"
+}
+
+fetch_state_sync_commit_hash() {
+    local rpc=$1 trust=$2 payload network returned_height hash
+
+    payload=$(curl -fsS --max-time 15 "$rpc/commit?height=$trust") || return 1
+    network=$(jq -r '.result.signed_header.header.chain_id // empty' <<<"$payload")
+    returned_height=$(jq -r '.result.signed_header.header.height // empty' <<<"$payload")
+    hash=$(jq -r '.result.signed_header.commit.block_id.hash // empty' <<<"$payload")
+
+    [ "$network" = "limonata_10777-1" ] || return 1
+    [ "$returned_height" = "$trust" ] || return 1
     [[ "$hash" =~ ^[0-9A-Fa-f]{64}$ ]] || return 1
-    grep -q '^\[statesync\]' "$CFG" || return 1
 
+    printf '%s' "${hash^^}"
+}
+
+configure_state_sync() {
+    local primary_rpc witness_rpc primary_latest witness_latest latest trust
+    local primary_hash witness_hash
+
+    primary_rpc=$(normalize_state_sync_rpc "${LIMONATA_STATE_SYNC_PRIMARY_RPC:-https://cosmos-rpc.limonata.xyz}")
+    witness_rpc=$(normalize_state_sync_rpc "${LIMONATA_STATE_SYNC_WITNESS_RPC:-https://limonata.rpc.t.anode.team}")
+
+    if [ -z "$primary_rpc" ] || [ -z "$witness_rpc" ] || [ "$primary_rpc" = "$witness_rpc" ]; then
+        echo "State sync requires two distinct CometBFT RPC endpoints for independent verification." >&2
+        return 1
+    fi
+
+    if ! primary_latest=$(fetch_state_sync_rpc_height "$primary_rpc"); then
+        echo "Primary state-sync RPC is unavailable, catching up, or on the wrong chain." >&2
+        return 1
+    fi
+    if ! witness_latest=$(fetch_state_sync_rpc_height "$witness_rpc"); then
+        echo "Witness state-sync RPC is unavailable, catching up, or on the wrong chain." >&2
+        return 1
+    fi
+
+    if [ "$primary_latest" -lt "$witness_latest" ]; then
+        latest=$primary_latest
+    else
+        latest=$witness_latest
+    fi
+    trust=$(( (latest - 2000) / 1000 * 1000 ))
+    [ "$trust" -gt 0 ] || return 1
+
+    if ! primary_hash=$(fetch_state_sync_commit_hash "$primary_rpc" "$trust"); then
+        echo "Primary state-sync RPC did not return a valid trusted commit." >&2
+        return 1
+    fi
+    if ! witness_hash=$(fetch_state_sync_commit_hash "$witness_rpc" "$trust"); then
+        echo "Witness state-sync RPC did not return a valid trusted commit." >&2
+        return 1
+    fi
+    if [ "$primary_hash" != "$witness_hash" ]; then
+        echo "State-sync RPCs disagree at trusted height $trust. Refusing state sync." >&2
+        return 1
+    fi
+
+    grep -q '^\[statesync\]' "$CFG" || return 1
     sed -i "/^\[statesync\]/,/^\[/ { \
       s/^enable *=.*/enable = true/; \
-      s#^rpc_servers *=.*#rpc_servers = \"$rpc,$rpc\"#; \
+      s#^rpc_servers *=.*#rpc_servers = \"$primary_rpc,$witness_rpc\"#; \
       s/^trust_height *=.*/trust_height = $trust/; \
-      s/^trust_hash *=.*/trust_hash = \"$hash\"/; \
+      s/^trust_hash *=.*/trust_hash = \"$primary_hash\"/; \
       s/^trust_period *=.*/trust_period = \"168h0m0s\"/ }" "$CFG"
 
-    echo "State sync configured: trusted height $trust via $rpc"
+    echo "State sync configured: trusted height $trust matched across two CometBFT RPC endpoints."
 }
 
 if [ "$LIMONATA_STATE_SYNC" = "y" ]; then
     if ! configure_state_sync; then
-        echo "WARNING: State sync configuration failed because the official CometBFT RPC did not return valid trust data."
+        echo "WARNING: State sync configuration failed because two CometBFT RPC endpoints could not independently agree on valid trust data."
         CONTINUE_GENESIS=$(prompt_short_yes_no "Continue with normal genesis sync instead? (y/n, default n): " n)
         if [ "$CONTINUE_GENESIS" != "y" ]; then
             echo "Installation stopped before the service was created. Re-run when the state-sync RPC is available, or choose normal genesis sync."
