@@ -58,6 +58,7 @@ This URL is pinned to the reviewed wrapper commit.
 
 - **[Usage guide — every menu option explained](docs/usage.md)**
 - [Manual node guide (commands behind the menu)](docs/node-guide.md)
+- [Upgrade readiness](docs/upgrade-readiness.md) - read-only Cosmovisor, local-node, and staged-upgrade preflight.
 
 ## Features
 
@@ -67,6 +68,7 @@ This URL is pinned to the reviewed wrapper commit.
 - Verify wrapper child scripts against pinned SHA-256 values before execution
 - Pre-stage replay-safe v0.3.6 across known historical Cosmovisor upgrade slots for genesis sync
 - Protect Cosmovisor-managed nodes from direct replacement and verify reviewed legacy updates with the same signed-release trust contract
+- Check Cosmovisor policy, rollback backup readiness, the live `x/upgrade` plan, and staged upgrade binaries without changing the node
 - Add/reset persistent peers
 - Node status (block height, catching_up) and live logs
 - Create/recover operator key, show validator consensus pubkey
