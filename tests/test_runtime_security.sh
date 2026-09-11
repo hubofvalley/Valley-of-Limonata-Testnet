@@ -75,6 +75,14 @@ set -e
 [ "$status" -eq 1 ] || fail "affected public gRPC listener should fail"
 grep -Fq '[FAIL] Affected gRPC-Go server is configured on non-loopback listener 0.0.0.0:9090.' "$tmp/public-grpc.out" || fail "missing public gRPC failure"
 
+write_config true '127.0.0.1.evil.example:9090' true '127.0.0.1:8545' '127.0.0.1:8546' 'eth,net,web3'
+set +e
+run_case "$tmp/deceptive-host.out" env FAKE_GRPC_VERSION=v1.80.0
+status=$?
+set -e
+[ "$status" -eq 1 ] || fail "hostname beginning with 127. must not be treated as loopback"
+grep -Fq '[FAIL] Affected gRPC-Go server is configured on non-loopback listener 127.0.0.1.evil.example:9090.' "$tmp/deceptive-host.out" || fail "deceptive hostname was not rejected"
+
 write_config true '0.0.0.0:9090' true '127.0.0.1:8545' '127.0.0.1:8546' 'eth,net,web3'
 if ! run_case "$tmp/patched.out" env FAKE_GRPC_VERSION=v1.83.1; then
     fail "patched gRPC version should not fail the known advisory gate"
