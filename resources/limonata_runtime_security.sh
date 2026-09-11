@@ -78,13 +78,11 @@ toml_value() {
             line=$0
             if (line ~ "^[[:space:]]*" key "[[:space:]]*=") {
                 sub("^[[:space:]]*" key "[[:space:]]*=[[:space:]]*", "", line)
+                sub(/[[:space:]]+#.*/, "", line)
                 line=trim(line)
                 if (line ~ /^\".*\"[[:space:]]*$/) {
                     sub(/^\"/, "", line)
                     sub(/\"[[:space:]]*$/, "", line)
-                } else {
-                    sub(/[[:space:]]+#.*/, "", line)
-                    line=trim(line)
                 }
                 print line
                 exit
@@ -94,11 +92,29 @@ toml_value() {
 }
 
 is_loopback_listener() {
-    local address=${1#tcp://}
+    local address=${1#tcp://} host octet
+
     case "$address" in
-        localhost|localhost:*|127.*|127.*:*|'[::1]'|'[::1]':*|::1|unix:*|unix://*) return 0 ;;
-        *) return 1 ;;
+        unix:*|unix://*) return 0 ;;
+        \[*\]:*)
+            host=${address%%]*}
+            host=${host#\[}
+            ;;
+        *:*) host=${address%:*} ;;
+        *) host=$address ;;
     esac
+
+    case "$host" in
+        localhost|::1) return 0 ;;
+    esac
+
+    if [[ "$host" =~ ^127\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
+        for octet in "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}"; do
+            (( octet <= 255 )) || return 1
+        done
+        return 0
+    fi
+    return 1
 }
 
 semver_le() {
