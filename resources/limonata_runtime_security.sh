@@ -9,6 +9,10 @@ GO_BIN=${GO_BIN:-go}
 readonly GRPC_ADVISORY_ID="CVE-2026-84304"
 readonly GRPC_ADVISORY_URL="https://github.com/grpc/grpc-go/security/advisories/GHSA-vp52-pcj8-j9qc"
 readonly GRPC_FIRST_FIXED_VERSION="1.83.1"
+readonly STATE_DB_ADVISORY_ID="GHSA-367m-g444-9mg3"
+readonly STATE_DB_ADVISORY_URL="https://github.com/cosmos/evm/security/advisories/GHSA-367m-g444-9mg3"
+readonly REVIEWED_LIMONATA_VERSION="0.3.6"
+readonly REVIEWED_LIMONATA_COMMIT="effa377d673fc6f0fb307a78ca54e037e53060f7"
 readonly JSONRPC_UPSTREAM_PR_URL="https://github.com/Limonata-Blockchain/limonata/pull/13"
 
 fail_count=0
@@ -26,10 +30,11 @@ usage() {
 Baconvalley Limonata Runtime Security Preflight
 
 Read-only preflight for the active Limonata binary and local app.toml. It checks
-embedded gRPC-Go build metadata against the published CVE-2026-84304 boundary,
-then correlates an affected gRPC server with the configured listener address. It
-also reports public EVM JSON-RPC/WS signing-surface configuration that deserves
-keyring review under Limonata upstream PR #13.
+an exact reviewed Limonata release/commit against a published critical Cosmos EVM
+StateDB advisory, checks embedded gRPC-Go build metadata against the published
+CVE-2026-84304 boundary, and correlates listener-related findings with local
+configuration. It also reports public EVM JSON-RPC/WS signing-surface
+configuration that deserves keyring review under Limonata upstream PR #13.
 
 This command never changes node data, configuration, services, keys, firewall
 rules, or chain state.
@@ -41,7 +46,7 @@ Environment overrides:
 
 Exit codes:
   0  No hard failure or unknown required check (warnings may be present)
-  1  Known affected gRPC server is configured on a non-loopback listener
+  1  At least one verified hard security finding is present
   2  No hard failure, but a required binary/config check is unknown
 USAGE
 }
@@ -89,6 +94,25 @@ toml_value() {
             }
         }
     ' "$file"
+}
+
+version_long_value() {
+    local output=$1 key=$2
+    awk -F: -v key="$key" '
+        function trim(s) {
+            sub(/^[[:space:]]+/, "", s)
+            sub(/[[:space:]]+$/, "", s)
+            return s
+        }
+        {
+            field=trim($1)
+            if (field == key) {
+                sub(/^[^:]*:[[:space:]]*/, "", $0)
+                print trim($0)
+                exit
+            }
+        }
+    ' <<<"$output"
 }
 
 is_loopback_listener() {
@@ -146,9 +170,11 @@ api_has_signing_namespace() {
     return 1
 }
 
+grpc_version=""
+release_version=""
+release_commit=""
 if [ ! -x "$LIMONATA_BIN" ]; then
     unknown "Limonata binary is missing or not executable: $LIMONATA_BIN"
-    grpc_version=""
 else
     build_info=$("$GO_BIN" version -m "$LIMONATA_BIN" 2>/dev/null || true)
     grpc_version=$(awk '$1 == "dep" && $2 == "google.golang.org/grpc" { print $3; exit }' <<<"$build_info")
@@ -158,6 +184,32 @@ else
         unknown "Embedded build metadata did not expose google.golang.org/grpc."
     else
         info "Embedded google.golang.org/grpc version: $grpc_version"
+    fi
+
+    release_output=$("$LIMONATA_BIN" version --long 2>/dev/null || "$LIMONATA_BIN" version 2>/dev/null || true)
+    release_version=$(version_long_value "$release_output" version)
+    release_commit=$(version_long_value "$release_output" commit)
+    if [ -z "$release_version" ]; then
+        unknown "Could not read the Limonata release version from 'version --long'."
+    else
+        info "Limonata release version: $release_version"
+    fi
+fi
+
+if [ -n "$release_version" ]; then
+    normalized_release_version=${release_version#v}
+    if [ "$normalized_release_version" = "$REVIEWED_LIMONATA_VERSION" ]; then
+        if [ -z "$release_commit" ]; then
+            unknown "Limonata v$REVIEWED_LIMONATA_VERSION is active but its source commit could not be established; refusing to guess $STATE_DB_ADVISORY_ID applicability."
+        elif [ "$release_commit" = "$REVIEWED_LIMONATA_COMMIT" ]; then
+            fail "Active Limonata v$REVIEWED_LIMONATA_VERSION commit $REVIEWED_LIMONATA_COMMIT matches the reviewed source state covered by critical $STATE_DB_ADVISORY_ID (non-atomic StateDB commit). A coordinated Limonata release carrying the upstream atomic-commit fix is required before this preflight can report security-ready."
+            info "This is a source-equivalence finding for the exact reviewed commit; it does not claim current live exploitability."
+            info "Advisory: $STATE_DB_ADVISORY_URL"
+        else
+            unknown "Limonata v$REVIEWED_LIMONATA_VERSION reports unexpected commit $release_commit; refusing to apply the reviewed $STATE_DB_ADVISORY_ID verdict to different source."
+        fi
+    else
+        info "No source-level $STATE_DB_ADVISORY_ID verdict is encoded for Limonata $release_version; only the exact reviewed v$REVIEWED_LIMONATA_VERSION commit is classified by this check."
     fi
 fi
 
