@@ -18,6 +18,13 @@ fail() {
 mkdir -p "$tmp/home/config" "$tmp/bin"
 cat > "$tmp/bin/limonatad" <<'BIN'
 #!/usr/bin/env bash
+set -euo pipefail
+if [ "${1:-}" = "version" ]; then
+    printf 'name: limonatad\n'
+    printf 'version: %s\n' "${FAKE_LIMONATA_VERSION:-v0.3.7}"
+    printf 'commit: %s\n' "${FAKE_LIMONATA_COMMIT:-1111111111111111111111111111111111111111}"
+    exit 0
+fi
 exit 0
 BIN
 chmod +x "$tmp/bin/limonatad"
@@ -85,7 +92,7 @@ grep -Fq '[FAIL] Affected gRPC-Go server is configured on non-loopback listener 
 
 write_config true '0.0.0.0:9090' true '127.0.0.1:8545' '127.0.0.1:8546' 'eth,net,web3'
 if ! run_case "$tmp/patched.out" env FAKE_GRPC_VERSION=v1.83.1; then
-    fail "patched gRPC version should not fail the known advisory gate"
+    fail "patched gRPC version should not fail the known gRPC advisory gate"
 fi
 grep -Fq '[PASS] google.golang.org/grpc v1.83.1 is newer than the published CVE-2026-84304 affected range.' "$tmp/patched.out" || fail "patched gRPC version not recognized"
 
@@ -102,5 +109,28 @@ status=$?
 set -e
 [ "$status" -eq 2 ] || fail "missing embedded gRPC metadata should return UNKNOWN exit 2"
 grep -Fq '[UNKNOWN] Embedded build metadata did not expose google.golang.org/grpc.' "$tmp/no-dep.out" || fail "missing build metadata UNKNOWN"
+
+write_config false 'localhost:9090' false '127.0.0.1:8545' '127.0.0.1:8546' 'eth,net,web3'
+set +e
+run_case "$tmp/state-db-affected.out" env \
+    FAKE_GRPC_VERSION=v1.83.1 \
+    FAKE_LIMONATA_VERSION=v0.3.6 \
+    FAKE_LIMONATA_COMMIT=effa377d673fc6f0fb307a78ca54e037e53060f7
+status=$?
+set -e
+[ "$status" -eq 1 ] || fail "reviewed v0.3.6 commit should fail the critical StateDB advisory gate"
+grep -Fq '[FAIL] Active Limonata v0.3.6 commit effa377d673fc6f0fb307a78ca54e037e53060f7 matches the reviewed source state covered by critical GHSA-367m-g444-9mg3' "$tmp/state-db-affected.out" || fail "missing critical StateDB source-equivalence failure"
+grep -Fq 'does not claim current live exploitability' "$tmp/state-db-affected.out" || fail "missing source-equivalence limitation"
+
+write_config false 'localhost:9090' false '127.0.0.1:8545' '127.0.0.1:8546' 'eth,net,web3'
+set +e
+run_case "$tmp/state-db-unexpected-commit.out" env \
+    FAKE_GRPC_VERSION=v1.83.1 \
+    FAKE_LIMONATA_VERSION=v0.3.6 \
+    FAKE_LIMONATA_COMMIT=2222222222222222222222222222222222222222
+status=$?
+set -e
+[ "$status" -eq 2 ] || fail "v0.3.6 with an unexpected commit should be UNKNOWN"
+grep -Fq '[UNKNOWN] Limonata v0.3.6 reports unexpected commit 2222222222222222222222222222222222222222' "$tmp/state-db-unexpected-commit.out" || fail "missing unexpected-commit UNKNOWN"
 
 echo "Runtime security preflight checks passed."
