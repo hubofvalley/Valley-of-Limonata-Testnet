@@ -5,6 +5,10 @@ set -euo pipefail
 LIMONATA_HOME=${LIMONATA_HOME:-$HOME/.limonatad}
 LIMONATA_BIN=${LIMONATA_BIN:-$HOME/go/bin/limonatad}
 GO_BIN=${GO_BIN:-go}
+CURL_BIN=${CURL_BIN:-curl}
+JQ_BIN=${JQ_BIN:-jq}
+LIMONATA_REST=${LIMONATA_REST:-https://rest.limonata.xyz}
+LIMONATA_REST_TIMEOUT=${LIMONATA_REST_TIMEOUT:-10}
 
 readonly GRPC_ADVISORY_ID="CVE-2026-84304"
 readonly GRPC_ADVISORY_URL="https://github.com/grpc/grpc-go/security/advisories/GHSA-vp52-pcj8-j9qc"
@@ -43,6 +47,12 @@ Environment overrides:
   LIMONATA_HOME  Node home (default: $HOME/.limonatad)
   LIMONATA_BIN   Active binary (default: $HOME/go/bin/limonatad)
   GO_BIN         Go command used for 'go version -m' (default: go)
+  CURL_BIN       curl command used for read-only live queries (default: curl)
+  JQ_BIN         jq command used for JSON parsing (default: jq)
+  LIMONATA_REST  Public REST endpoint used for live-chain correlation
+                 (default: https://rest.limonata.xyz)
+  LIMONATA_REST_TIMEOUT
+                 Per-request timeout in seconds (default: 10)
 
 Exit codes:
   0  No hard failure or unknown required check (warnings may be present)
@@ -173,6 +183,7 @@ api_has_signing_namespace() {
 grpc_version=""
 release_version=""
 release_commit=""
+state_db_exact_match=false
 if [ ! -x "$LIMONATA_BIN" ]; then
     unknown "Limonata binary is missing or not executable: $LIMONATA_BIN"
 else
@@ -202,6 +213,7 @@ if [ -n "$release_version" ]; then
         if [ -z "$release_commit" ]; then
             unknown "Limonata v$REVIEWED_LIMONATA_VERSION is active but its source commit could not be established; refusing to guess $STATE_DB_ADVISORY_ID applicability."
         elif [ "$release_commit" = "$REVIEWED_LIMONATA_COMMIT" ]; then
+            state_db_exact_match=true
             fail "Active Limonata v$REVIEWED_LIMONATA_VERSION commit $REVIEWED_LIMONATA_COMMIT matches the reviewed source state covered by critical $STATE_DB_ADVISORY_ID (non-atomic StateDB commit). A coordinated Limonata release carrying the upstream atomic-commit fix is required before this preflight can report security-ready."
             info "This is a source-equivalence finding for the exact reviewed commit; it does not claim current live exploitability."
             info "Advisory: $STATE_DB_ADVISORY_URL"
@@ -210,6 +222,83 @@ if [ -n "$release_version" ]; then
         fi
     else
         info "No source-level $STATE_DB_ADVISORY_ID verdict is encoded for Limonata $release_version; only the exact reviewed v$REVIEWED_LIMONATA_VERSION commit is classified by this check."
+    fi
+fi
+
+rest_get() {
+    local path=$1
+    "$CURL_BIN" -fsS --max-time "$LIMONATA_REST_TIMEOUT" "${LIMONATA_REST%/}${path}"
+}
+
+if [ "$state_db_exact_match" = true ]; then
+    live_state_complete=true
+    live_chain=""
+    live_app_version=""
+    erc20_enabled=""
+    permissionless_registration=""
+    enabled_ibc_pairs=""
+    open_transfer_channels=""
+
+    if node_info_json=$(rest_get '/cosmos/base/tendermint/v1beta1/node_info' 2>/dev/null); then
+        live_chain=$("$JQ_BIN" -r '.default_node_info.network // empty' <<<"$node_info_json" 2>/dev/null || true)
+        live_app_version=$("$JQ_BIN" -r '.application_version.version // empty' <<<"$node_info_json" 2>/dev/null || true)
+        if [ "$live_chain" != "limonata_10777-1" ]; then
+            unknown "Live REST endpoint did not prove the expected Limonata chain ID; refusing to use it for $STATE_DB_ADVISORY_ID exposure correlation."
+            live_state_complete=false
+        elif [ "${live_app_version#v}" != "$REVIEWED_LIMONATA_VERSION" ]; then
+            unknown "Live REST endpoint reports application version '${live_app_version:-unknown}', not reviewed v$REVIEWED_LIMONATA_VERSION; refusing to mix release assumptions."
+            live_state_complete=false
+        else
+            pass "Live REST endpoint reports expected chain limonata_10777-1 and application v$REVIEWED_LIMONATA_VERSION."
+        fi
+    else
+        unknown "Could not query live Limonata node info from $LIMONATA_REST."
+        live_state_complete=false
+    fi
+
+    if erc20_params_json=$(rest_get '/cosmos/evm/erc20/v1/params' 2>/dev/null); then
+        erc20_enabled=$("$JQ_BIN" -r 'if (.params | type) == "object" and (.params | has("enable_erc20")) then .params.enable_erc20 else empty end' <<<"$erc20_params_json" 2>/dev/null || true)
+        permissionless_registration=$("$JQ_BIN" -r 'if (.params | type) == "object" and (.params | has("permissionless_registration")) then .params.permissionless_registration else empty end' <<<"$erc20_params_json" 2>/dev/null || true)
+        if [[ "$erc20_enabled" != "true" && "$erc20_enabled" != "false" ]] || [[ "$permissionless_registration" != "true" && "$permissionless_registration" != "false" ]]; then
+            unknown "Live x/erc20 params response is missing expected boolean fields."
+            live_state_complete=false
+        fi
+    else
+        unknown "Could not query live x/erc20 params from $LIMONATA_REST."
+        live_state_complete=false
+    fi
+
+    if token_pairs_json=$(rest_get '/cosmos/evm/erc20/v1/token_pairs?pagination.limit=200' 2>/dev/null); then
+        enabled_ibc_pairs=$("$JQ_BIN" -r '[.token_pairs[]? | select(.enabled == true and ((.denom | type) == "string") and (.denom | startswith("ibc/")))] | length' <<<"$token_pairs_json" 2>/dev/null || true)
+        if ! [[ "$enabled_ibc_pairs" =~ ^[0-9]+$ ]]; then
+            unknown "Live x/erc20 token-pair response could not be parsed safely."
+            live_state_complete=false
+        fi
+    else
+        unknown "Could not query live x/erc20 token pairs from $LIMONATA_REST."
+        live_state_complete=false
+    fi
+
+    if channels_json=$(rest_get '/ibc/core/channel/v1/channels?pagination.limit=200' 2>/dev/null); then
+        open_transfer_channels=$("$JQ_BIN" -r '[.channels[]? | select(.state == "STATE_OPEN" and .port_id == "transfer")] | length' <<<"$channels_json" 2>/dev/null || true)
+        if ! [[ "$open_transfer_channels" =~ ^[0-9]+$ ]]; then
+            unknown "Live IBC channel response could not be parsed safely."
+            live_state_complete=false
+        fi
+    else
+        unknown "Could not query live IBC channels from $LIMONATA_REST."
+        live_state_complete=false
+    fi
+
+    if [ "$live_state_complete" = true ]; then
+        info "Live x/erc20: enabled=$erc20_enabled permissionless_registration=$permissionless_registration enabled_ibc_token_pairs=$enabled_ibc_pairs."
+        info "Live IBC: open transfer channels=$open_transfer_channels."
+        if [ "$erc20_enabled" = true ] && [ "$permissionless_registration" = true ] && (( open_transfer_channels > 0 )); then
+            fail "The exact affected v$REVIEWED_LIMONATA_VERSION source is active locally and the live Limonata chain exposes the observable $STATE_DB_ADVISORY_ID preconditions: x/erc20 is enabled, permissionless ERC20 registration is enabled, and at least one ICS20 transfer channel is open. Treat the advisory as operationally urgent until a coordinated fixed release is available."
+            info "This check correlates published advisory preconditions with read-only chain state; it does not reproduce the exploit or claim that exploitation has occurred."
+        else
+            info "The live chain did not expose every observable $STATE_DB_ADVISORY_ID precondition checked by this tool; the exact-source critical finding still applies until a coordinated fixed release is available."
+        fi
     fi
 fi
 

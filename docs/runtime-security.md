@@ -37,10 +37,27 @@ checked rather than classified from its custom version number:
 
 For that exact reviewed Limonata commit, the preflight therefore reports a hard
 security finding until Limonata publishes a coordinated release carrying an
-equivalent atomic-commit fix. This is a **source-equivalence verdict**, not a
-claim that the public Limonata testnet is currently exploitable: live ERC20/IBC
-state and reachability are separate questions, and the checker does not attempt
-to reproduce an exploit.
+equivalent atomic-commit fix.
+
+When that exact source is active, the checker also performs a read-only
+live-chain correlation against the configured Limonata REST endpoint. It first
+proves the expected chain ID and application version, then reads:
+
+- `x/erc20` `enable_erc20` and `permissionless_registration`;
+- enabled token-pair metadata, reporting only the count of enabled IBC-denom
+  pairs; and
+- IBC channel state, reporting the count of open `transfer` channels.
+
+If ERC20 conversion and permissionless registration are both enabled and at
+least one ICS20 transfer channel is open, the preflight reports that the
+**observable published advisory preconditions are present**. This is stronger
+operational evidence than source equivalence alone, but it still does not
+execute the exploit or claim that exploitation has occurred.
+
+The live queries are deliberately fail-closed: an unreachable REST endpoint,
+unexpected chain/version, or malformed response becomes `UNKNOWN` and is never
+treated as proof that the live preconditions are absent. `LIMONATA_REST` can be
+overridden when an operator prefers another trusted read-only endpoint.
 
 A binary claiming v0.3.6 with a different or missing commit is `UNKNOWN`; the
 checker refuses to transfer the verdict to different source. Other Limonata
@@ -94,8 +111,11 @@ an external reachability proof.
 The source-level StateDB verdict is deliberately pinned to the exact reviewed
 Limonata v0.3.6 commit. It does not infer vulnerability from Limonata's version
 number alone and does not substitute for upstream vulnerability coordination.
-Do not build or deploy an unofficial validator binary merely to incorporate an
-upstream security patch; wait for a coordinated, authenticated Limonata release.
+The live REST correlation is evidence about current public chain state, not a
+proof of endpoint independence, public exploit reachability, successful attack,
+or compromise. Do not build or deploy an unofficial validator binary merely to
+incorporate an upstream security patch; wait for a coordinated, authenticated
+Limonata release.
 
 Likewise, a dependency version newer than one affected range only closes that
 specific advisory check. It does not certify the entire binary or node. Always
