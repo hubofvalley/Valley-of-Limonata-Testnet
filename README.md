@@ -49,7 +49,7 @@ downloads child scripts with fail-closed curl flags when needed, and verifies
 their pinned SHA-256 before executing them.
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/0739abeb408e23f31f9f2c94ea2817b3f8c6d347/resources/valleyofLimonata.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/c8be1839114805c6eb6205e35eaa208b38d3b3d5/resources/valleyofLimonata.sh)
 ```
 
 This URL is pinned to the reviewed wrapper commit.
