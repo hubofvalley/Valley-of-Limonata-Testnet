@@ -72,10 +72,21 @@ Cosmovisor is initialized.
 ```bash
 MONIKER="your-moniker"
 LIMONATA_HOME="$HOME/.limonatad"
+GENESIS_SHA256="bb76a6d8abbb1bdeaa41d92811066b16bd6a48f58f7136e3fcb71226b6af4569"
+GENESIS_TMP=$(mktemp)
+trap 'rm -f "$GENESIS_TMP"' EXIT
+
 $HOME/go/bin/limonatad --home "$LIMONATA_HOME" init "$MONIKER" --chain-id limonata_10777-1
-curl -fsSL https://limonata.xyz/genesis.json -o "$LIMONATA_HOME/config/genesis.json"
+curl -fsSL https://limonata.xyz/genesis.json -o "$GENESIS_TMP"
+echo "$GENESIS_SHA256  $GENESIS_TMP" | sha256sum -c -
+test "$(jq -r '.chain_id // empty' "$GENESIS_TMP")" = "limonata_10777-1"
+install -m 0644 "$GENESIS_TMP" "$LIMONATA_HOME/config/genesis.json"
 $HOME/go/bin/limonatad --home "$LIMONATA_HOME" genesis validate-genesis
 ```
+
+The genesis digest is pinned separately from the mutable download URL. Do not
+replace it with a provider-specific hash unless the canonical Limonata genesis
+bytes have been independently re-verified.
 
 ## Cosmovisor layout
 

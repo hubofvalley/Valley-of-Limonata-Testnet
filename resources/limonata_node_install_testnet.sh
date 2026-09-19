@@ -16,6 +16,8 @@ readonly LIMONATA_RELEASE="limonata-v0.3.6"
 readonly LIMONATA_RELEASE_COMMIT="effa377d673fc6f0fb307a78ca54e037e53060f7"
 readonly LIMONATA_ARTIFACT="limonatad-linux-amd64.tar.gz"
 readonly LIMONATA_ARTIFACT_SHA256="39ff376963498de120604c273d50751afc005ebeec9cbcca88c0f732eff56125"
+readonly LIMONATA_GENESIS_URL="https://limonata.xyz/genesis.json"
+readonly LIMONATA_GENESIS_SHA256="bb76a6d8abbb1bdeaa41d92811066b16bd6a48f58f7136e3fcb71226b6af4569"
 readonly LIMONATA_SIGNING_KEY_FINGERPRINT="A45380198F390AF69126AE12E4ECEC477C1735FB"
 readonly LIMONATA_REPO="https://github.com/Limonata-Blockchain/limonata.git"
 readonly LIMONATA_RELEASE_BASE="https://github.com/Limonata-Blockchain/limonata/releases/download/${LIMONATA_RELEASE}"
@@ -307,9 +309,27 @@ if [[ "$SETUP_UFW" =~ ^[Yy]$ ]]; then
     sudo ufw status verbose
 fi
 
-# Initialize using the pinned v0.3.6 binary, then fetch and validate live genesis.
+# Initialize using the pinned v0.3.6 binary, then install only the reviewed
+# canonical genesis bytes. Hash and chain-id checks happen before the candidate
+# can replace the initialized placeholder genesis.
 "$LIMONATA_BIN" --home "$LIMONATA_HOME" init "$LIMONATA_MONIKER" --chain-id limonata_10777-1
-curl -fsSL https://limonata.xyz/genesis.json -o "$LIMONATA_HOME/config/genesis.json"
+GENESIS_CANDIDATE="$WORKDIR/limonata-genesis.json"
+curl -fsSL "$LIMONATA_GENESIS_URL" -o "$GENESIS_CANDIDATE"
+GENESIS_ACTUAL_SHA256=$(sha256sum "$GENESIS_CANDIDATE" | awk '{print $1}')
+if [ "$GENESIS_ACTUAL_SHA256" != "$LIMONATA_GENESIS_SHA256" ]; then
+    echo "Pinned genesis SHA256 mismatch. Refusing installation."
+    echo "Expected: $LIMONATA_GENESIS_SHA256"
+    echo "Observed: $GENESIS_ACTUAL_SHA256"
+    exit 1
+fi
+GENESIS_CHAIN_ID=$(jq -r '.chain_id // empty' "$GENESIS_CANDIDATE")
+if [ "$GENESIS_CHAIN_ID" != "limonata_10777-1" ]; then
+    echo "Genesis chain-id mismatch. Refusing installation."
+    echo "Expected: limonata_10777-1"
+    echo "Observed: ${GENESIS_CHAIN_ID:-<missing>}"
+    exit 1
+fi
+install -m 0644 "$GENESIS_CANDIDATE" "$LIMONATA_HOME/config/genesis.json"
 "$LIMONATA_BIN" --home "$LIMONATA_HOME" genesis validate-genesis
 
 CFG="$LIMONATA_HOME/config/config.toml"
