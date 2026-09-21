@@ -13,6 +13,9 @@ LIMONATA_REST_TIMEOUT=${LIMONATA_REST_TIMEOUT:-10}
 readonly GRPC_ADVISORY_ID="CVE-2026-84304"
 readonly GRPC_ADVISORY_URL="https://github.com/grpc/grpc-go/security/advisories/GHSA-vp52-pcj8-j9qc"
 readonly GRPC_FIRST_FIXED_VERSION="1.83.1"
+readonly COSMOS_SDK_REVIEWED_VERSION="0.54.3"
+readonly COSMOS_SDK_SECURITY_PATCH_VERSION="0.54.4"
+readonly COSMOS_SDK_SECURITY_PATCH_URL="https://github.com/cosmos/cosmos-sdk/releases/tag/v0.54.4"
 readonly STATE_DB_ADVISORY_ID="GHSA-367m-g444-9mg3"
 readonly STATE_DB_ADVISORY_URL="https://github.com/cosmos/evm/security/advisories/GHSA-367m-g444-9mg3"
 readonly REVIEWED_LIMONATA_VERSION="0.3.6"
@@ -35,10 +38,11 @@ Baconvalley Limonata Runtime Security Preflight
 
 Read-only preflight for the active Limonata binary and local app.toml. It checks
 an exact reviewed Limonata release/commit against a published critical Cosmos EVM
-StateDB advisory, checks embedded gRPC-Go build metadata against the published
-CVE-2026-84304 boundary, and correlates listener-related findings with local
-configuration. It also reports public EVM JSON-RPC/WS signing-surface
-configuration that deserves keyring review under Limonata upstream PR #13.
+StateDB advisory, checks the embedded Cosmos SDK security patch line, checks
+embedded gRPC-Go build metadata against the published CVE-2026-84304 boundary,
+and correlates listener-related findings with local configuration. It also
+reports public EVM JSON-RPC/WS signing-surface configuration that deserves
+keyring review under Limonata upstream PR #13.
 
 This command never changes node data, configuration, services, keys, firewall
 rules, or chain state.
@@ -181,6 +185,7 @@ api_has_signing_namespace() {
 }
 
 grpc_version=""
+cosmos_sdk_version=""
 release_version=""
 release_commit=""
 state_db_exact_match=false
@@ -189,12 +194,16 @@ if [ ! -x "$LIMONATA_BIN" ]; then
 else
     build_info=$("$GO_BIN" version -m "$LIMONATA_BIN" 2>/dev/null || true)
     grpc_version=$(awk '$1 == "dep" && $2 == "google.golang.org/grpc" { print $3; exit }' <<<"$build_info")
+    cosmos_sdk_version=$(awk '$1 == "dep" && $2 == "github.com/cosmos/cosmos-sdk" { print $3; exit }' <<<"$build_info")
     if [ -z "$build_info" ]; then
         unknown "Could not read Go build metadata from the active binary."
     elif [ -z "$grpc_version" ]; then
         unknown "Embedded build metadata did not expose google.golang.org/grpc."
     else
         info "Embedded google.golang.org/grpc version: $grpc_version"
+    fi
+    if [ -n "$cosmos_sdk_version" ]; then
+        info "Embedded github.com/cosmos/cosmos-sdk version: $cosmos_sdk_version"
     fi
 
     release_output=$("$LIMONATA_BIN" version --long 2>/dev/null || "$LIMONATA_BIN" version 2>/dev/null || true)
@@ -222,6 +231,18 @@ if [ -n "$release_version" ]; then
         fi
     else
         info "No source-level $STATE_DB_ADVISORY_ID verdict is encoded for Limonata $release_version; only the exact reviewed v$REVIEWED_LIMONATA_VERSION commit is classified by this check."
+    fi
+fi
+
+if [ "$state_db_exact_match" = true ]; then
+    if [ -z "$cosmos_sdk_version" ]; then
+        unknown "The exact reviewed Limonata v$REVIEWED_LIMONATA_VERSION binary did not expose github.com/cosmos/cosmos-sdk build metadata; refusing to guess its security patch-line status."
+    elif [ "${cosmos_sdk_version#v}" = "$COSMOS_SDK_REVIEWED_VERSION" ]; then
+        fail "The exact reviewed Limonata v$REVIEWED_LIMONATA_VERSION binary embeds Cosmos SDK v$COSMOS_SDK_REVIEWED_VERSION. Upstream v$COSMOS_SDK_SECURITY_PATCH_VERSION is an explicit state-breaking security patch release for this line and recommends a coordinated upgrade for all chains. Wait for an authenticated coordinated Limonata release; do not self-rebuild the validator binary."
+        info "This is a security patch-line readiness finding, not a claim that a specific Cosmos SDK vulnerability is exploitable on Limonata."
+        info "Upstream release: $COSMOS_SDK_SECURITY_PATCH_URL"
+    else
+        unknown "The exact reviewed Limonata v$REVIEWED_LIMONATA_VERSION binary embeds unexpected Cosmos SDK version $cosmos_sdk_version; refusing to transfer the reviewed v$COSMOS_SDK_REVIEWED_VERSION patch-line verdict to different build metadata."
     fi
 fi
 

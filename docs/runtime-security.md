@@ -63,6 +63,25 @@ A binary claiming v0.3.6 with a different or missing commit is `UNKNOWN`; the
 checker refuses to transfer the verdict to different source. Other Limonata
 versions are not automatically classified by this release-specific rule.
 
+### Cosmos SDK security patch line
+
+The exact reviewed Limonata v0.3.6 source pins `github.com/cosmos/cosmos-sdk`
+v0.54.3. Cosmos SDK v0.54.4 is an upstream state-breaking security patch release
+for the same v0.54 line; its release notes say that it contains important
+security fixes and recommend that all chains upgrade through a coordinated
+upgrade.
+
+For the exact reviewed Limonata v0.3.6 commit, the preflight therefore reads the
+embedded Cosmos SDK version from `go version -m`. An exact v0.54.3 match is a
+security-readiness failure until Limonata publishes an authenticated coordinated
+release that incorporates the relevant fixes. Missing or different build
+metadata is `UNKNOWN`, not `PASS`.
+
+This is deliberately a **patch-line readiness finding**, not a claim that any
+particular Cosmos SDK vulnerability is exploitable on Limonata. The upstream
+patch release is state breaking, so operators must not self-rebuild or swap the
+validator dependency independently of a coordinated Limonata release.
+
 ### gRPC-Go runtime dependency
 
 - reads `google.golang.org/grpc` from the active Go binary with

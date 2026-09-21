@@ -39,6 +39,9 @@ printf '%s: go1.26.5\n' "${3:-binary}"
 if [ "${FAKE_NO_GRPC_DEP:-0}" != "1" ]; then
     printf '\tdep\tgoogle.golang.org/grpc\t%s\n' "${FAKE_GRPC_VERSION:-v1.80.0}"
 fi
+if [ "${FAKE_NO_COSMOS_SDK_DEP:-0}" != "1" ]; then
+    printf '\tdep\tgithub.com/cosmos/cosmos-sdk\t%s\n' "${FAKE_COSMOS_SDK_VERSION:-v0.54.3}"
+fi
 GO
 chmod +x "$tmp/bin/go"
 
@@ -158,6 +161,8 @@ status=$?
 set -e
 [ "$status" -eq 1 ] || fail "reviewed v0.3.6 commit should fail the critical StateDB advisory gate"
 grep -Fq '[FAIL] Active Limonata v0.3.6 commit effa377d673fc6f0fb307a78ca54e037e53060f7 matches the reviewed source state covered by critical GHSA-367m-g444-9mg3' "$tmp/state-db-affected.out" || fail "missing critical StateDB source-equivalence failure"
+grep -Fq '[FAIL] The exact reviewed Limonata v0.3.6 binary embeds Cosmos SDK v0.54.3. Upstream v0.54.4 is an explicit state-breaking security patch release' "$tmp/state-db-affected.out" || fail "missing Cosmos SDK security patch-line finding"
+grep -Fq 'not a claim that a specific Cosmos SDK vulnerability is exploitable on Limonata' "$tmp/state-db-affected.out" || fail "missing Cosmos SDK patch-line limitation"
 grep -Fq '[PASS] Live REST endpoint reports expected chain limonata_10777-1 and application v0.3.6.' "$tmp/state-db-affected.out" || fail "missing live chain identity proof"
 grep -Fq 'the live Limonata chain exposes the observable GHSA-367m-g444-9mg3 preconditions' "$tmp/state-db-affected.out" || fail "missing live StateDB exposure correlation"
 grep -Fq 'does not reproduce the exploit or claim that exploitation has occurred' "$tmp/state-db-affected.out" || fail "missing live-exposure limitation"
@@ -191,6 +196,30 @@ grep -Fq '[UNKNOWN] Live REST endpoint did not prove the expected Limonata chain
 if grep -Fq 'the live Limonata chain exposes the observable GHSA-367m-g444-9mg3 preconditions' "$tmp/state-db-wrong-live-chain.out"; then
     fail "wrong-chain REST data must not be used for live exposure correlation"
 fi
+
+write_config false 'localhost:9090' false '127.0.0.1:8545' '127.0.0.1:8546' 'eth,net,web3'
+set +e
+run_case "$tmp/state-db-unexpected-sdk.out" env \
+    FAKE_GRPC_VERSION=v1.83.1 \
+    FAKE_LIMONATA_VERSION=v0.3.6 \
+    FAKE_LIMONATA_COMMIT=effa377d673fc6f0fb307a78ca54e037e53060f7 \
+    FAKE_COSMOS_SDK_VERSION=v0.54.4
+status=$?
+set -e
+[ "$status" -eq 1 ] || fail "exact affected source should remain a hard failure when embedded Cosmos SDK metadata is unexpected"
+grep -Fq '[UNKNOWN] The exact reviewed Limonata v0.3.6 binary embeds unexpected Cosmos SDK version v0.54.4' "$tmp/state-db-unexpected-sdk.out" || fail "unexpected Cosmos SDK version should be UNKNOWN"
+
+write_config false 'localhost:9090' false '127.0.0.1:8545' '127.0.0.1:8546' 'eth,net,web3'
+set +e
+run_case "$tmp/state-db-missing-sdk.out" env \
+    FAKE_GRPC_VERSION=v1.83.1 \
+    FAKE_LIMONATA_VERSION=v0.3.6 \
+    FAKE_LIMONATA_COMMIT=effa377d673fc6f0fb307a78ca54e037e53060f7 \
+    FAKE_NO_COSMOS_SDK_DEP=1
+status=$?
+set -e
+[ "$status" -eq 1 ] || fail "exact affected source should remain a hard failure when Cosmos SDK build metadata is missing"
+grep -Fq '[UNKNOWN] The exact reviewed Limonata v0.3.6 binary did not expose github.com/cosmos/cosmos-sdk build metadata' "$tmp/state-db-missing-sdk.out" || fail "missing Cosmos SDK metadata should be UNKNOWN"
 
 write_config false 'localhost:9090' false '127.0.0.1:8545' '127.0.0.1:8546' 'eth,net,web3'
 set +e
