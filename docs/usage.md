@@ -77,8 +77,9 @@ Valley currently pins:
 - source commit: `effa377d673fc6f0fb307a78ca54e037e53060f7`
 - artifact SHA-256: `39ff376963498de120604c273d50751afc005ebeec9cbcca88c0f732eff56125`
 - release-signing fingerprint: `A45380198F390AF69126AE12E4ECEC477C1735FB`
-- Cosmovisor: `v1.7.1`
+- Cosmovisor: `v1.7.3`
 - Valley installer Go toolchain: `1.26.5`
+- Cosmovisor `v1.7.3` includes the upstream Go 1.26+ build compatibility fix.
 - operator-facing binary: `$HOME/go/bin/limonatad`
 
 The v0.3.6 source intentionally preserves legacy behavior before its coordinated

@@ -18,7 +18,7 @@ Supported platform: Linux x86_64 (AMD64).
 - Native denom: `aLIMO` (1 LIMO = 10^18 aLIMO)
 - Binary command: `~/go/bin/limonatad`
 - Reviewed release: `limonata-v0.3.6` (`effa377d673fc6f0fb307a78ca54e037e53060f7`)
-- Process manager: Cosmovisor (`v1.7.1` in the Valley installer)
+- Process manager: Cosmovisor (`v1.7.3` in the Valley installer)
 - Active binary target: `~/.limonatad/cosmovisor/current/bin/limonatad`
 - Service: `limonatad.service`
 - Genesis: https://limonata.xyz/genesis.json

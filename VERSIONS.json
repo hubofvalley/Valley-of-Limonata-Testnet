@@ -60,7 +60,7 @@
       "binary_path": "$HOME/go/bin/limonatad",
       "cosmovisor": {
         "used": true,
-        "version": "v1.7.1",
+        "version": "v1.7.3",
         "binary": "/usr/local/bin/cosmovisor",
         "genesis_binary": "limonata-v0.3.6",
         "operator_binary_symlink": "$HOME/go/bin/limonatad",

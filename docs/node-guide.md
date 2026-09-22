@@ -80,7 +80,8 @@ $HOME/go/bin/limonatad --home "$LIMONATA_HOME" genesis validate-genesis
 ## Cosmovisor layout
 
 New Valley deployments run `limonatad` through Cosmovisor from the start. The
-installer pins Cosmovisor `v1.7.1`, disables binary auto-downloads, and creates:
+installer pins Cosmovisor `v1.7.3`, which includes the upstream Go 1.26+ build
+compatibility fix, disables binary auto-downloads, and creates:
 
 ```text
 $HOME/.limonatad/cosmovisor/
