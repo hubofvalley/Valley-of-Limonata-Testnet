@@ -52,7 +52,7 @@ SHA-256 above before installation.
 ## Build from source
 
 The tagged source is pinned to the same full commit. The upstream v0.3.6
-`go.mod` declares Go `1.25.9`; Valley currently installs Go `1.26.5` for its
+`go.mod` declares Go `1.25.9`; Valley currently installs Go `1.26.8` for its
 source-build/Cosmovisor toolchain.
 
 ```bash

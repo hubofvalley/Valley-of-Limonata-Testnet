@@ -20,7 +20,8 @@ grep -Fq 'readonly LIMONATA_RELEASE_COMMIT="effa377d673fc6f0fb307a78ca54e037e530
 grep -Fq 'readonly LIMONATA_ARTIFACT_SHA256="39ff376963498de120604c273d50751afc005ebeec9cbcca88c0f732eff56125"' "$installer" || fail "artifact SHA256 is not pinned"
 grep -Fq 'readonly LIMONATA_SIGNING_KEY_FINGERPRINT="A45380198F390AF69126AE12E4ECEC477C1735FB"' "$installer" || fail "signing key fingerprint is not pinned"
 grep -Fq 'readonly COSMOVISOR_VERSION="v1.7.3"' "$installer" || fail "Cosmovisor version is not pinned"
-grep -Fq 'readonly GO_VERSION="1.26.5"' "$installer" || fail "installer Go toolchain is not pinned"
+grep -Fq 'readonly GO_VERSION="1.26.8"' "$installer" || fail "installer Go toolchain is not pinned"
+grep -Fq 'readonly GO_LINUX_AMD64_SHA256="d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b"' "$installer" || fail "installer Go archive SHA256 is not pinned"
 grep -Fq 'readonly LIMONATA_BIN_DIR="$HOME/go/bin"' "$installer" || fail "Limonata binary dir is not ~/go/bin"
 grep -Fq 'readonly LIMONATA_BIN="$LIMONATA_BIN_DIR/limonatad"' "$installer" || fail "Limonata binary path is not ~/go/bin/limonatad"
 
@@ -52,6 +53,7 @@ jq -e '.components.validator.consensus.version_current == "limonata-v0.3.6"' "$v
 jq -e '.components.validator.consensus.release_commit == "effa377d673fc6f0fb307a78ca54e037e53060f7"' "$versions" >/dev/null || fail "VERSIONS commit mismatch"
 jq -e '.components.validator.consensus.artifact_sha256 == "39ff376963498de120604c273d50751afc005ebeec9cbcca88c0f732eff56125"' "$versions" >/dev/null || fail "VERSIONS artifact digest mismatch"
 jq -e '.components.validator.consensus.signature.fingerprint == "A45380198F390AF69126AE12E4ECEC477C1735FB"' "$versions" >/dev/null || fail "VERSIONS signing fingerprint mismatch"
+jq -e '.chain.installer_go_toolchain == "1.26.8"' "$versions" >/dev/null || fail "VERSIONS Go toolchain mismatch"
 jq -e '.components.validator.binary_install_dir == "$HOME/go/bin"' "$versions" >/dev/null || fail "VERSIONS binary dir mismatch"
 jq -e '.components.validator.binary_path == "$HOME/go/bin/limonatad"' "$versions" >/dev/null || fail "VERSIONS binary path mismatch"
 jq -e '.components.validator.cosmovisor.operator_binary_symlink == "$HOME/go/bin/limonatad"' "$versions" >/dev/null || fail "VERSIONS operator symlink mismatch"

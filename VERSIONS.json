@@ -19,7 +19,7 @@
     "denom": "aLIMO",
     "decimals": 18,
     "upstream_go_mod": "1.25.9",
-    "installer_go_toolchain": "1.26.5"
+    "installer_go_toolchain": "1.26.8"
   },
   "components": {
     "validator": {
