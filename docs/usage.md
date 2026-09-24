@@ -78,8 +78,9 @@ Valley currently pins:
 - artifact SHA-256: `39ff376963498de120604c273d50751afc005ebeec9cbcca88c0f732eff56125`
 - release-signing fingerprint: `A45380198F390AF69126AE12E4ECEC477C1735FB`
 - Cosmovisor: `v1.7.3`
-- Valley installer Go toolchain: `1.26.8`
-- Cosmovisor `v1.7.3` includes the upstream Go 1.26+ build compatibility fix.
+- Cosmovisor Linux AMD64 artifact SHA-256: `3df6ef38cf976b00d226f391dc6866b8dc4040fc2f1b4a780d248f6e1cc9332e`
+- Valley source-build Go toolchain: `1.26.8`
+- Fresh installs use the pinned official Cosmovisor release artifact; Go is only installed when the operator selects the Limonata source-build path.
 - operator-facing binary: `$HOME/go/bin/limonatad`
 
 The v0.3.6 source intentionally preserves legacy behavior before its coordinated
