@@ -19,8 +19,11 @@ grep -Fq 'readonly LIMONATA_RELEASE="limonata-v0.3.6"' "$installer" || fail "ins
 grep -Fq 'readonly LIMONATA_RELEASE_COMMIT="effa377d673fc6f0fb307a78ca54e037e53060f7"' "$installer" || fail "release commit is not pinned"
 grep -Fq 'readonly LIMONATA_ARTIFACT_SHA256="39ff376963498de120604c273d50751afc005ebeec9cbcca88c0f732eff56125"' "$installer" || fail "artifact SHA256 is not pinned"
 grep -Fq 'readonly LIMONATA_SIGNING_KEY_FINGERPRINT="A45380198F390AF69126AE12E4ECEC477C1735FB"' "$installer" || fail "signing key fingerprint is not pinned"
-grep -Fq 'readonly COSMOVISOR_VERSION="v1.7.1"' "$installer" || fail "Cosmovisor version is not pinned"
-grep -Fq 'readonly GO_VERSION="1.26.5"' "$installer" || fail "installer Go toolchain is not pinned"
+grep -Fq 'readonly COSMOVISOR_VERSION="v1.7.3"' "$installer" || fail "Cosmovisor version is not pinned"
+grep -Fq 'readonly COSMOVISOR_ARTIFACT="cosmovisor-v1.7.3-linux-amd64.tar.gz"' "$installer" || fail "Cosmovisor artifact is not pinned"
+grep -Fq 'readonly COSMOVISOR_ARTIFACT_SHA256="3df6ef38cf976b00d226f391dc6866b8dc4040fc2f1b4a780d248f6e1cc9332e"' "$installer" || fail "Cosmovisor artifact SHA256 is not pinned"
+grep -Fq 'readonly GO_VERSION="1.26.8"' "$installer" || fail "installer Go toolchain is not pinned"
+grep -Fq 'readonly GO_LINUX_AMD64_SHA256="d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b"' "$installer" || fail "installer Go archive SHA256 is not pinned"
 grep -Fq 'readonly LIMONATA_BIN_DIR="$HOME/go/bin"' "$installer" || fail "Limonata binary dir is not ~/go/bin"
 grep -Fq 'readonly LIMONATA_BIN="$LIMONATA_BIN_DIR/limonatad"' "$installer" || fail "Limonata binary path is not ~/go/bin/limonatad"
 
@@ -37,6 +40,12 @@ grep -Fq 'ln -s "$LIMONATA_HOME/cosmovisor/current/bin/limonatad" "$LIMONATA_BIN
 grep -Fq 'Environment="DAEMON_ALLOW_DOWNLOAD_BINARIES=false"' "$installer" || fail "Cosmovisor auto-download must be disabled"
 grep -Fq 'Environment="DAEMON_DOWNLOAD_MUST_HAVE_CHECKSUM=true"' "$installer" || fail "Cosmovisor checksum policy missing"
 grep -Fq 'ExecStart=$COSMOVISOR_BIN run start' "$installer" || fail "systemd does not start through Cosmovisor"
+grep -Fq 'curl -fsSL "${COSMOVISOR_RELEASE_BASE}/${COSMOVISOR_ARTIFACT}" -o "$archive"' "$installer" || fail "Cosmovisor release artifact is not downloaded fail-closed"
+grep -Fq 'echo "${COSMOVISOR_ARTIFACT_SHA256}  ${archive}" | sha256sum -c -' "$installer" || fail "Cosmovisor release artifact is not checksum-gated"
+if grep -Fq 'go install "cosmossdk.io/tools/cosmovisor/cmd/cosmovisor@${COSMOVISOR_VERSION}"' "$installer"; then
+    fail "default Cosmovisor install path must not depend on go install"
+fi
+grep -A1 -F 'if [[ "$INSTALL_METHOD" =~ ^[Ss]$ ]]; then' "$installer" | grep -Fq 'install_go_toolchain' || fail "Go toolchain must be installed only for the source-build path"
 
 for upgrade_name in \
     valgrant-v1 \
@@ -52,10 +61,14 @@ jq -e '.components.validator.consensus.version_current == "limonata-v0.3.6"' "$v
 jq -e '.components.validator.consensus.release_commit == "effa377d673fc6f0fb307a78ca54e037e53060f7"' "$versions" >/dev/null || fail "VERSIONS commit mismatch"
 jq -e '.components.validator.consensus.artifact_sha256 == "39ff376963498de120604c273d50751afc005ebeec9cbcca88c0f732eff56125"' "$versions" >/dev/null || fail "VERSIONS artifact digest mismatch"
 jq -e '.components.validator.consensus.signature.fingerprint == "A45380198F390AF69126AE12E4ECEC477C1735FB"' "$versions" >/dev/null || fail "VERSIONS signing fingerprint mismatch"
+jq -e '.chain.installer_go_toolchain == "1.26.8"' "$versions" >/dev/null || fail "VERSIONS Go toolchain mismatch"
 jq -e '.components.validator.binary_install_dir == "$HOME/go/bin"' "$versions" >/dev/null || fail "VERSIONS binary dir mismatch"
 jq -e '.components.validator.binary_path == "$HOME/go/bin/limonatad"' "$versions" >/dev/null || fail "VERSIONS binary path mismatch"
 jq -e '.components.validator.cosmovisor.operator_binary_symlink == "$HOME/go/bin/limonatad"' "$versions" >/dev/null || fail "VERSIONS operator symlink mismatch"
 jq -e '.components.validator.cosmovisor.used == true' "$versions" >/dev/null || fail "VERSIONS Cosmovisor flag mismatch"
+jq -e '.components.validator.cosmovisor.release_artifact == "cosmovisor-v1.7.3-linux-amd64.tar.gz"' "$versions" >/dev/null || fail "VERSIONS Cosmovisor artifact mismatch"
+jq -e '.components.validator.cosmovisor.artifact_sha256 == "3df6ef38cf976b00d226f391dc6866b8dc4040fc2f1b4a780d248f6e1cc9332e"' "$versions" >/dev/null || fail "VERSIONS Cosmovisor digest mismatch"
+jq -e '.components.validator.cosmovisor.install_method == "verified_release_artifact"' "$versions" >/dev/null || fail "VERSIONS Cosmovisor install method mismatch"
 jq -e '.components.validator.cosmovisor.allow_download_binaries == false' "$versions" >/dev/null || fail "VERSIONS must disable Cosmovisor downloads"
 jq -e '.components.validator.upgrade.consensus_breaking == true' "$versions" >/dev/null || fail "coordinated upgrade semantics missing"
 jq -e '.components.validator.upgrade.state_breaking == "not_asserted_by_upstream_release"' "$versions" >/dev/null || fail "state-breaking claim must remain non-asserted"

@@ -19,9 +19,12 @@ readonly LIMONATA_ARTIFACT_SHA256="39ff376963498de120604c273d50751afc005ebeec9cb
 readonly LIMONATA_SIGNING_KEY_FINGERPRINT="A45380198F390AF69126AE12E4ECEC477C1735FB"
 readonly LIMONATA_REPO="https://github.com/Limonata-Blockchain/limonata.git"
 readonly LIMONATA_RELEASE_BASE="https://github.com/Limonata-Blockchain/limonata/releases/download/${LIMONATA_RELEASE}"
-readonly COSMOVISOR_VERSION="v1.7.1"
-readonly GO_VERSION="1.26.5"
-readonly GO_LINUX_AMD64_SHA256="5c2c3b16caefa1d968a94c1daca04a7ca301a496d9b086e17ad77bb81393f053"
+readonly COSMOVISOR_VERSION="v1.7.3"
+readonly COSMOVISOR_ARTIFACT="cosmovisor-v1.7.3-linux-amd64.tar.gz"
+readonly COSMOVISOR_ARTIFACT_SHA256="3df6ef38cf976b00d226f391dc6866b8dc4040fc2f1b4a780d248f6e1cc9332e"
+readonly COSMOVISOR_RELEASE_BASE="https://github.com/cosmos/cosmos-sdk/releases/download/cosmovisor/${COSMOVISOR_VERSION}"
+readonly GO_VERSION="1.26.8"
+readonly GO_LINUX_AMD64_SHA256="d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b"
 readonly GO_ROOT="$HOME/.local/go-${GO_VERSION}"
 readonly COSMOVISOR_BIN="/usr/local/bin/cosmovisor"
 readonly LIMONATA_BIN_DIR="$HOME/go/bin"
@@ -184,14 +187,22 @@ install_go_toolchain() {
 }
 
 install_cosmovisor() {
-    echo "Installing pinned Cosmovisor ${COSMOVISOR_VERSION} from the verified Go module..."
-    mkdir -p "$HOME/.local/bin"
-    GOBIN="$HOME/.local/bin" "$GO_ROOT/bin/go" install "cosmossdk.io/tools/cosmovisor/cmd/cosmovisor@${COSMOVISOR_VERSION}"
-    sudo install -m 0755 "$HOME/.local/bin/cosmovisor" "$COSMOVISOR_BIN"
+    local archive="$WORKDIR/${COSMOVISOR_ARTIFACT}"
+    local extract_dir="$WORKDIR/cosmovisor-release"
+
+    echo "Installing pinned Cosmovisor ${COSMOVISOR_VERSION} from the verified release artifact..."
+    curl -fsSL "${COSMOVISOR_RELEASE_BASE}/${COSMOVISOR_ARTIFACT}" -o "$archive"
+    echo "${COSMOVISOR_ARTIFACT_SHA256}  ${archive}" | sha256sum -c -
+    mkdir -p "$extract_dir"
+    tar -xzf "$archive" -C "$extract_dir"
+    if [ ! -f "$extract_dir/cosmovisor" ]; then
+        echo "Verified Cosmovisor archive does not contain the expected binary."
+        exit 1
+    fi
+    sudo install -m 0755 "$extract_dir/cosmovisor" "$COSMOVISOR_BIN"
     "$COSMOVISOR_BIN" --help >/dev/null
 }
 
-install_go_toolchain
 install_cosmovisor
 
 STAGED_BINARY="$WORKDIR/limonatad"
@@ -269,6 +280,7 @@ build_pinned_source() {
 }
 
 if [[ "$INSTALL_METHOD" =~ ^[Ss]$ ]]; then
+    install_go_toolchain
     build_pinned_source
 else
     install_verified_prebuilt

@@ -19,7 +19,7 @@
     "denom": "aLIMO",
     "decimals": 18,
     "upstream_go_mod": "1.25.9",
-    "installer_go_toolchain": "1.26.5"
+    "installer_go_toolchain": "1.26.8"
   },
   "components": {
     "validator": {
@@ -60,7 +60,10 @@
       "binary_path": "$HOME/go/bin/limonatad",
       "cosmovisor": {
         "used": true,
-        "version": "v1.7.1",
+        "version": "v1.7.3",
+        "release_artifact": "cosmovisor-v1.7.3-linux-amd64.tar.gz",
+        "artifact_sha256": "3df6ef38cf976b00d226f391dc6866b8dc4040fc2f1b4a780d248f6e1cc9332e",
+        "install_method": "verified_release_artifact",
         "binary": "/usr/local/bin/cosmovisor",
         "genesis_binary": "limonata-v0.3.6",
         "operator_binary_symlink": "$HOME/go/bin/limonatad",

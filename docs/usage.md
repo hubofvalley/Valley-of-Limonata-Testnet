@@ -7,7 +7,7 @@ How to run the tool, navigate it, and understand each menu option.
 Run the reviewed wrapper directly:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/0739abeb408e23f31f9f2c94ea2817b3f8c6d347/resources/valleyofLimonata.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/87817ab273c97107f80273aca90793ce3c319429/resources/valleyofLimonata.sh)
 ```
 
 This URL is pinned to the reviewed wrapper commit. The wrapper downloads child scripts from immutable commit URLs with `curl -fsSL`
@@ -77,8 +77,10 @@ Valley currently pins:
 - source commit: `effa377d673fc6f0fb307a78ca54e037e53060f7`
 - artifact SHA-256: `39ff376963498de120604c273d50751afc005ebeec9cbcca88c0f732eff56125`
 - release-signing fingerprint: `A45380198F390AF69126AE12E4ECEC477C1735FB`
-- Cosmovisor: `v1.7.1`
-- Valley installer Go toolchain: `1.26.5`
+- Cosmovisor: `v1.7.3`
+- Cosmovisor Linux AMD64 artifact SHA-256: `3df6ef38cf976b00d226f391dc6866b8dc4040fc2f1b4a780d248f6e1cc9332e`
+- Valley source-build Go toolchain: `1.26.8`
+- Fresh installs use the pinned official Cosmovisor release artifact; Go is only installed when the operator selects the Limonata source-build path.
 - operator-facing binary: `$HOME/go/bin/limonatad`
 
 The v0.3.6 source intentionally preserves legacy behavior before its coordinated

@@ -18,7 +18,7 @@ Supported platform: Linux x86_64 (AMD64).
 - Native denom: `aLIMO` (1 LIMO = 10^18 aLIMO)
 - Binary command: `~/go/bin/limonatad`
 - Reviewed release: `limonata-v0.3.6` (`effa377d673fc6f0fb307a78ca54e037e53060f7`)
-- Process manager: Cosmovisor (`v1.7.1` in the Valley installer)
+- Process manager: Cosmovisor (`v1.7.3`, pinned official release artifact)
 - Active binary target: `~/.limonatad/cosmovisor/current/bin/limonatad`
 - Service: `limonatad.service`
 - Genesis: https://limonata.xyz/genesis.json
@@ -49,7 +49,7 @@ downloads child scripts with fail-closed curl flags when needed, and verifies
 their pinned SHA-256 before executing them.
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/0739abeb408e23f31f9f2c94ea2817b3f8c6d347/resources/valleyofLimonata.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/87817ab273c97107f80273aca90793ce3c319429/resources/valleyofLimonata.sh)
 ```
 
 This URL is pinned to the reviewed wrapper commit.
