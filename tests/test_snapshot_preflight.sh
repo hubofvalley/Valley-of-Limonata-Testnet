@@ -140,6 +140,14 @@ unset MOCK_ROTATE
 printf 'PASS: metadata rotation refused\n'
 
 reset_fixtures
+jq '.snapshot_height=9223372036854775808' "$tmp/fixtures/metadata.json" > "$tmp/fixtures/changed" && mv "$tmp/fixtures/changed" "$tmp/fixtures/metadata.json"
+expect_unknown 'snapshot height outside safe integer range'
+
+reset_fixtures
+jq '.result.sync_info.latest_block_height="9007199254740992"' "$tmp/fixtures/rpc-a.json" > "$tmp/fixtures/changed" && mv "$tmp/fixtures/changed" "$tmp/fixtures/rpc-a.json"
+expect_unknown 'RPC height outside safe integer range'
+
+reset_fixtures
 jq '.network_facts.snapshot_url="UNKNOWN"' "$tmp/repo/VERSIONS.json" > "$tmp/repo/changed" && mv "$tmp/repo/changed" "$tmp/repo/VERSIONS.json"
 expect_unknown 'unconfigured provider'
 

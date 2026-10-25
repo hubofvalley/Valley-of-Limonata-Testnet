@@ -20,6 +20,17 @@ manifest_value() {
     jq -er "$1 | select(type == \"string\" and length > 0)" "$VERSIONS" 2>/dev/null
 }
 
+# Compare heights numerically only after bounding them to exact IEEE-754 integers.
+# This also prevents Bash's signed 64-bit comparison from wrapping on remote values.
+safe_height() {
+    local value=$1
+    [[ "$value" =~ ^[1-9][0-9]*$ ]] || return 1
+    if [ "${#value}" -lt 16 ]; then
+        return 0
+    fi
+    [ "${#value}" -eq 16 ] && [ "$value" -lt 9007199254740992 ]
+}
+
 chain_id=$(manifest_value '.chain.chain_id') || die "missing manifest chain ID"
 snapshot_base=$(manifest_value '.network_facts.snapshot_url') || die "missing snapshot provider"
 rpc_a=$(manifest_value '.network_facts.state_sync_rpc') || die "missing primary CometBFT RPC"
@@ -52,10 +63,10 @@ jq -e --arg chain "$chain_id" '
 name=$(jq -er '.snapshot_name | select(type == "string")' "$tmp/metadata.json") || die "missing snapshot name"
 [[ "$name" =~ ^[A-Za-z0-9_.-]+$ && "$name" == "${chain_id}-"*.tar.lz4 ]] || die "unsafe snapshot filename"
 
-height=$(jq -er '.snapshot_height | select(type == "number" and . > 0 and . == floor) | tostring' "$tmp/metadata.json") || die "invalid snapshot height"
+height=$(jq -er '.snapshot_height | select(type == "number" and . > 0 and . == floor and . < 9007199254740992) | tostring' "$tmp/metadata.json") || die "invalid snapshot height"
 size=$(jq -er '.snapshot_size_bytes | select(type == "number" and . > 0 and . == floor and . < 9007199254740992) | tostring' "$tmp/metadata.json") || die "invalid snapshot size"
 digest=$(jq -er '.snapshot_sha256 | select(type == "string")' "$tmp/metadata.json") || die "missing snapshot digest"
-[[ "$height" =~ ^[1-9][0-9]*$ && "$size" =~ ^[1-9][0-9]*$ ]] || die "non-integer snapshot height or size"
+safe_height "$height" && [[ "$size" =~ ^[1-9][0-9]*$ ]] || die "non-integer or unsafe snapshot height or size"
 [[ "$digest" =~ ^[0-9A-Fa-f]{64}$ ]] || die "invalid snapshot SHA-256"
 
 match_count=$(awk -v name="$name" 'NF == 2 && $2 == name { n++ } END { print n+0 }' "$tmp/checksums")
@@ -81,7 +92,7 @@ check_rpc() {
     rpc_height=$(jq -er '.result.sync_info.latest_block_height | select(type == "string" or type == "number") | tostring' "$response") || die "RPC height unavailable"
     syncing=$(jq -r '.result.sync_info.catching_up | select(type == "boolean")' "$response") || die "RPC sync status unavailable"
     [ "$rpc_chain" = "$chain_id" ] || die "public RPC chain ID mismatch"
-    [[ "$rpc_height" =~ ^[1-9][0-9]*$ ]] || die "invalid public RPC height"
+    safe_height "$rpc_height" || die "invalid or unsafe public RPC height"
     [[ "$syncing" == false || "$syncing" == true ]] || die "RPC sync status unavailable"
     [ "$syncing" = false ] || die "public RPC is catching up"
     [ "$rpc_height" -ge "$height" ] || die "snapshot height exceeds public RPC height"
