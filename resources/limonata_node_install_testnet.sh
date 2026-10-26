@@ -135,26 +135,50 @@ fi
 
 echo "Using Service Name: ${LIMONATA_SERVICE_NAME}"
 
-if { [ -d "$HOME/.limonatad" ] || [ -f "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service" ] || command -v limonatad >/dev/null 2>&1; } \
-    && [ "${LIMONATA_REDEPLOY_CONFIRMED:-0}" != "1" ]; then
-    echo "WARNING: An existing Limonata installation was detected."
-    echo "Re-deployment permanently deletes $HOME/.limonatad, including local block data and priv_validator_key.json."
-    echo "Back up validator keys and store the operator mnemonic offline before continuing."
-    read -r -p "Type REDEPLOY to confirm permanent deletion: " REDEPLOY_CONFIRM
-    if [ "$REDEPLOY_CONFIRM" != "REDEPLOY" ]; then
-        echo "Re-deployment cancelled. No existing node data was changed."
-        exit 0
-    fi
-fi
+# Fresh installation only. Neither an operator prompt nor an environment variable
+# may authorize replacing node data or an existing validator signing watermark.
+guard_fresh_limonata_install() {
+    local unit="$LIMONATA_SERVICE_NAME.service"
+    local target load_state
 
-sudo systemctl daemon-reload
-sudo systemctl stop "$LIMONATA_SERVICE_NAME" 2>/dev/null || true
-sudo systemctl disable "$LIMONATA_SERVICE_NAME" 2>/dev/null || true
-sudo rm -f "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service" 2>/dev/null || true
-sudo rm -f /usr/local/bin/limonatad 2>/dev/null || true
-rm -f "$LIMONATA_BIN" 2>/dev/null || true
-sudo rm -rf "$HOME/.limonatad" 2>/dev/null || true
-sed -i "/LIMONATA_/d" "$HOME/.bash_profile" 2>/dev/null || true
+    for target in \
+        "$HOME/.limonatad" \
+        "$LIMONATA_BIN" \
+        "/usr/local/bin/limonatad" \
+        "/etc/systemd/system/$unit" \
+        "/run/systemd/system/$unit" \
+        "/lib/systemd/system/$unit" \
+        "/usr/lib/systemd/system/$unit" \
+        "/etc/systemd/system/multi-user.target.wants/$unit"; do
+        if [ -e "$target" ] || [ -L "$target" ]; then
+            echo "REFUSED: existing node, binary, or unit path detected: $target" >&2
+            echo "This installer supports fresh installations only; use a separately reviewed recovery procedure." >&2
+            return 1
+        fi
+    done
+
+    if command -v limonatad >/dev/null 2>&1; then
+        echo "REFUSED: existing limonatad executable found in PATH." >&2
+        return 1
+    fi
+
+    if ! command -v systemctl >/dev/null 2>&1; then
+        echo "REFUSED: cannot inspect systemd unit state." >&2
+        return 1
+    fi
+    if ! load_state=$(systemctl show --no-pager --property=LoadState --value "$unit" 2>/dev/null); then
+        echo "REFUSED: systemd unit state could not be verified." >&2
+        return 1
+    fi
+    if [ "$load_state" != "not-found" ]; then
+        echo "REFUSED: systemd unit state is not fresh: $load_state" >&2
+        return 1
+    fi
+}
+
+if ! guard_fresh_limonata_install; then
+    exit 1
+fi
 
 sudo apt update -y
 sudo apt install -y curl git jq bc build-essential gcc unzip wget lz4 openssl gnupg ca-certificates
@@ -295,6 +319,10 @@ fi
 
 # Put the operator-facing binary in ~/go/bin, matching the Valley of Story UX.
 # After Cosmovisor initialization this path becomes a symlink to current/bin.
+# Recheck after downloads/builds, before creating the operator binary.
+if ! guard_fresh_limonata_install; then
+    exit 1
+fi
 install -m 0755 "$STAGED_BINARY" "$LIMONATA_BIN"
 
 {

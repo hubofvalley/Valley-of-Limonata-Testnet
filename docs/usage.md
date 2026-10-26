@@ -28,7 +28,7 @@ installs expose the command at `~/go/bin/limonatad`, matching Valley of Story.
 
 - Choose an option by typing the number + letter together, for example `1a`.
 - Normal confirmations require `yes` or `no`; destructive actions require the
-  exact words shown by the tool, such as `REDEPLOY` or `DELETE`.
+  exact words shown by the tool, such as `DELETE`.
 - After exiting, run `source ~/.bash_profile` if you want newly written variables
   in the current shell.
 
@@ -38,7 +38,7 @@ installs expose the command at `~/go/bin/limonatad`, matching Valley of Story.
 
 | Option | What it does | Risk | When to use |
 |---|---|---|---|
-| **1a. Deploy/Re-deploy Limonata Node** | Installs the reviewed `limonata-v0.3.6` target, verifies the official artifact, installs pinned Cosmovisor, places the operator-facing command at `~/go/bin/limonatad`, initializes the node, configures the network, and starts the systemd service through Cosmovisor. Existing installs require `REDEPLOY`. | **Destructive on re-deploy:** removes `~/.limonatad`, including local block data and `priv_validator_key.json`. | First setup or an intentional clean reinstall. |
+| **1a. Deploy Limonata Node (fresh only)** | Installs the reviewed release and pinned Cosmovisor, validates configuration, and starts a new service. Refuses existing node homes, binaries, units, symlinks, and unverifiable systemd state before installation. | **Fail-closed:** never deletes or replaces an existing installation. | First-time setup only; existing operators must use a separately reviewed recovery or upgrade plan. |
 | **1b. Update Limonata Binary** | On new Valley installs, detects that `~/go/bin/limonatad` points to Cosmovisor `current` and refuses direct binary replacement. If the current target is already v0.3.6 it exits cleanly. The legacy direct-binary path accepts only reviewed v0.3.6 metadata and verifies the pinned signing-key fingerprint, signed checksum file, pinned artifact SHA-256, and reported version before stopping the service. | Direct replacement of a Cosmovisor `current` binary is blocked; a legacy update fails closed before service changes if release verification fails. | Check whether a current Valley node needs a reviewed upgrade. |
 | **1c. Add Peers** | Edits `persistent_peers` in `~/.limonatad/config/config.toml`. | Configuration change. | Peer/connectivity repair. |
 | **1d. Show Node Status** | Reads the local RPC status and compares local height with the public Limonata RPC. | Read-only. | Check sync progress. |
@@ -146,7 +146,6 @@ scripts unless their local SHA-256 matches its reviewed pins.
 - Never share private keys or mnemonics.
 - Testnet tokens are valueless.
 - Staking transactions use `1000000000aLIMO` gas price in the Valley flow.
-- Audit operational scripts before running them, especially destructive deploy,
-  delete, and upgrade paths.
+- Audit operational scripts before running them, especially delete, recovery, and upgrade paths.
 
 last updated by: John

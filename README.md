@@ -61,7 +61,7 @@ This URL is pinned to the reviewed wrapper commit.
 
 ## Features
 
-- Deploy/re-deploy Limonata node with pinned v0.3.6, Cosmovisor, validated ports, optional state sync, UFW, and systemd
+- Deploy Limonata node on a fresh host only with pinned v0.3.6, Cosmovisor, validated ports, optional state sync, UFW, and systemd
 - Keep the user-facing `limonatad` command in `~/go/bin`, symlinked to Cosmovisor `current`
 - Verify the official v0.3.6 artifact with pinned SHA-256 plus the official GPG signing fingerprint
 - Verify wrapper child scripts against pinned SHA-256 values before execution
@@ -73,6 +73,11 @@ This URL is pinned to the reviewed wrapper commit.
 - Create validator (guided `validator.json` + `tx staking create-validator`)
 - Query balance, delegate tokens, query validator status
 - Backup validator key, restart/stop/delete node
+
+The installer now refuses existing node data, binaries, symlinks, and uncertain
+systemd unit state before any installation work. It never offers an automatic
+redeploy or deletes validator signing state. Restoring or migrating an existing
+validator requires a separate, reviewed procedure.
 
 ## Recommended validator flow
 
