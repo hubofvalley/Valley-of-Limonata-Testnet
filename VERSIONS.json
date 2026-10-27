@@ -2,7 +2,7 @@
   "schema_version": "1.1",
   "network": "limonata-testnet",
   "human_name": "Valley of Limonata - Testnet",
-  "last_updated": "2026-08-27",
+  "last_updated": "2026-10-27",
   "source_of_truth": "github.com/hubofvalley/Valley-of-Limonata-Testnet (resources/*.sh)",
   "verification_status": "needs_live_verification",
   "verification_note": "Pinned to the official limonata-v0.3.6 release and source commit. Upstream documents replay-safe genesis-to-head behavior for this binary. The new Valley Cosmovisor fresh-install path still requires a clean-host live smoke test before verification_status can become verified.",
