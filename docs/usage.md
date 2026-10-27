@@ -7,7 +7,7 @@ How to run the tool, navigate it, and understand each menu option.
 Run the reviewed wrapper directly:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/0739abeb408e23f31f9f2c94ea2817b3f8c6d347/resources/valleyofLimonata.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/6a4e0abec810116452e47c12cdb670c6e3991e02/resources/valleyofLimonata.sh)
 ```
 
 This URL is pinned to the reviewed wrapper commit. The wrapper downloads child scripts from immutable commit URLs with `curl -fsSL`
@@ -28,7 +28,7 @@ installs expose the command at `~/go/bin/limonatad`, matching Valley of Story.
 
 - Choose an option by typing the number + letter together, for example `1a`.
 - Normal confirmations require `yes` or `no`; destructive actions require the
-  exact words shown by the tool, such as `REDEPLOY` or `DELETE`.
+  exact words shown by the tool, such as `DELETE`.
 - After exiting, run `source ~/.bash_profile` if you want newly written variables
   in the current shell.
 
@@ -38,7 +38,7 @@ installs expose the command at `~/go/bin/limonatad`, matching Valley of Story.
 
 | Option | What it does | Risk | When to use |
 |---|---|---|---|
-| **1a. Deploy/Re-deploy Limonata Node** | Installs the reviewed `limonata-v0.3.6` target, verifies the official artifact, installs pinned Cosmovisor, places the operator-facing command at `~/go/bin/limonatad`, initializes the node, configures the network, and starts the systemd service through Cosmovisor. Existing installs require `REDEPLOY`. | **Destructive on re-deploy:** removes `~/.limonatad`, including local block data and `priv_validator_key.json`. | First setup or an intentional clean reinstall. |
+| **1a. Deploy Limonata Node (fresh only)** | Installs the reviewed release and pinned Cosmovisor, validates configuration, and starts a new service. Refuses existing node homes, binaries, units, symlinks, and unverifiable systemd state before installation. | **Fail-closed:** never deletes or replaces an existing installation. | First-time setup only; existing operators must use a separately reviewed recovery or upgrade plan. |
 | **1b. Update Limonata Binary** | On new Valley installs, detects that `~/go/bin/limonatad` points to Cosmovisor `current` and refuses direct binary replacement. If the current target is already v0.3.6 it exits cleanly. The legacy direct-binary path accepts only reviewed v0.3.6 metadata and verifies the pinned signing-key fingerprint, signed checksum file, pinned artifact SHA-256, and reported version before stopping the service. | Direct replacement of a Cosmovisor `current` binary is blocked; a legacy update fails closed before service changes if release verification fails. | Check whether a current Valley node needs a reviewed upgrade. |
 | **1c. Add Peers** | Edits `persistent_peers` in `~/.limonatad/config/config.toml`. | Configuration change. | Peer/connectivity repair. |
 | **1d. Show Node Status** | Reads the local RPC status and compares local height with the public Limonata RPC. | Read-only. | Check sync progress. |
@@ -77,8 +77,10 @@ Valley currently pins:
 - source commit: `effa377d673fc6f0fb307a78ca54e037e53060f7`
 - artifact SHA-256: `39ff376963498de120604c273d50751afc005ebeec9cbcca88c0f732eff56125`
 - release-signing fingerprint: `A45380198F390AF69126AE12E4ECEC477C1735FB`
-- Cosmovisor: `v1.7.1`
-- Valley installer Go toolchain: `1.26.5`
+- Cosmovisor: `v1.7.3`
+- Cosmovisor Linux AMD64 artifact SHA-256: `3df6ef38cf976b00d226f391dc6866b8dc4040fc2f1b4a780d248f6e1cc9332e`
+- Valley source-build Go toolchain: `1.26.8`
+- Fresh installs use the pinned official Cosmovisor release artifact; Go is only installed when the operator selects the Limonata source-build path.
 - operator-facing binary: `$HOME/go/bin/limonatad`
 
 The v0.3.6 source intentionally preserves legacy behavior before its coordinated
@@ -144,7 +146,6 @@ scripts unless their local SHA-256 matches its reviewed pins.
 - Never share private keys or mnemonics.
 - Testnet tokens are valueless.
 - Staking transactions use `1000000000aLIMO` gas price in the Valley flow.
-- Audit operational scripts before running them, especially destructive deploy,
-  delete, and upgrade paths.
+- Audit operational scripts before running them, especially delete, recovery, and upgrade paths.
 
 last updated by: John

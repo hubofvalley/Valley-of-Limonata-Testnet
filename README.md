@@ -18,7 +18,8 @@ Supported platform: Linux x86_64 (AMD64).
 - Native denom: `aLIMO` (1 LIMO = 10^18 aLIMO)
 - Binary command: `~/go/bin/limonatad`
 - Reviewed release: `limonata-v0.3.6` (`effa377d673fc6f0fb307a78ca54e037e53060f7`)
-- Process manager: Cosmovisor (`v1.7.1` in the Valley installer)
+- Process manager: Cosmovisor (`v1.7.3`, pinned official release artifact)
+- Cosmovisor executable: `~/.local/libexec/valley-of-limonata/cosmovisor` (never overwrites a host-global binary)
 - Active binary target: `~/.limonatad/cosmovisor/current/bin/limonatad`
 - Service: `limonatad.service`
 - Genesis: https://limonata.xyz/genesis.json
@@ -49,7 +50,7 @@ downloads child scripts with fail-closed curl flags when needed, and verifies
 their pinned SHA-256 before executing them.
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/0739abeb408e23f31f9f2c94ea2817b3f8c6d347/resources/valleyofLimonata.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/6a4e0abec810116452e47c12cdb670c6e3991e02/resources/valleyofLimonata.sh)
 ```
 
 This URL is pinned to the reviewed wrapper commit.
@@ -61,7 +62,7 @@ This URL is pinned to the reviewed wrapper commit.
 
 ## Features
 
-- Deploy/re-deploy Limonata node with pinned v0.3.6, Cosmovisor, validated ports, optional state sync, UFW, and systemd
+- Deploy Limonata node on a fresh host only with pinned v0.3.6, Cosmovisor, validated ports, optional state sync, UFW, and systemd
 - Keep the user-facing `limonatad` command in `~/go/bin`, symlinked to Cosmovisor `current`
 - Verify the official v0.3.6 artifact with pinned SHA-256 plus the official GPG signing fingerprint
 - Verify wrapper child scripts against pinned SHA-256 values before execution
@@ -73,6 +74,11 @@ This URL is pinned to the reviewed wrapper commit.
 - Create validator (guided `validator.json` + `tx staking create-validator`)
 - Query balance, delegate tokens, query validator status
 - Backup validator key, restart/stop/delete node
+
+The installer now refuses existing node data, binaries, symlinks, and uncertain
+systemd unit state before any installation work. It never offers an automatic
+redeploy or deletes validator signing state. Restoring or migrating an existing
+validator requires a separate, reviewed procedure.
 
 ## Recommended validator flow
 

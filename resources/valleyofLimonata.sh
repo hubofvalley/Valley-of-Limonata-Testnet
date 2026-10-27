@@ -23,9 +23,9 @@ LIMONATA_CHAIN_ID=${LIMONATA_CHAIN_ID:-limonata_10777-1}
 LIMONATA_EVM_CHAIN_ID=${LIMONATA_EVM_CHAIN_ID:-10777}
 LIMONATA_STAKING_GAS_PRICE=${LIMONATA_STAKING_GAS_PRICE:-1000000000aLIMO}
 LIMONATA_TARGET_VERSION=${LIMONATA_TARGET_VERSION:-limonata-v0.3.6}
-readonly VALLEY_INSTALLER_SHA256="e42a89a398bbd0430eceb782c59ce652444e99be7452c7d26263342820082a26"
+readonly VALLEY_INSTALLER_SHA256="0652d0ba9abb11602d00482f9e5c49a7658ceda38d137cb3f43c00138b5912d8"
 readonly VALLEY_UPDATER_SHA256="356f02693b2cd39fd34ebafc57ba268ea59641944d0a8e54892202acf09cf2dc"
-readonly VALLEY_SCRIPT_COMMIT="d4b100bb926b6fd0392c29b0bc0ae61dcb21468f"
+readonly VALLEY_SCRIPT_COMMIT="07bc47de381444d4f113f9978d2a4eabf28249b8"
 readonly VALLEY_SCRIPT_BASE="https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/${VALLEY_SCRIPT_COMMIT}/resources"
 VALLEY_SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 VALLEY_REMOTE_TMP=""
@@ -331,10 +331,9 @@ function deploy_limonata_node() {
     echo -e "\n${YELLOW}2. SYSTEM IMPACT:${RESET}"
     echo -e "${GREEN}New Service:${RESET}"
     echo -e "  • ${CYAN}${LIMONATA_SERVICE_NAME}.service${RESET} (Limonata Node)"
-    echo -e "\n${RED}Existing Service to be Replaced:${RESET}"
-    echo -e "  • ${CYAN}${LIMONATA_SERVICE_NAME}${RESET}"
-    echo -e "${RED}Re-deploying permanently deletes ${LIMONATA_HOME}, including local block data and priv_validator_key.json.${RESET}"
-    echo -e "${RED}Back up the validator key with menu 3d and store the operator mnemonic offline before continuing.${RESET}"
+    echo -e "\n${GREEN}Fresh installation only:${RESET}"
+    echo -e "${YELLOW}Existing node data, binaries, and services will be refused, never replaced or deleted.${RESET}"
+    echo -e "${YELLOW}Validator recovery and migration require a separately reviewed procedure.${RESET}"
 
     echo -e "\n${GREEN}Port Configuration:${RESET}"
     echo -e "Ports will be adjusted based on your input (example if you enter 38):"
@@ -369,21 +368,21 @@ function deploy_limonata_node() {
         return
     fi
 
-    if [ -d "$LIMONATA_HOME" ] || [ -f "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service" ] || command -v limonatad >/dev/null 2>&1; then
-        echo -e "\n${RED}An existing Limonata installation was detected.${RESET}"
-        read -r -p "Type REDEPLOY to confirm permanent deletion of the existing node data: " redeploy_confirm
-        if [ "$redeploy_confirm" != "REDEPLOY" ]; then
-            echo -e "${RED}Re-deployment cancelled. No node data was changed.${RESET}"
-            menu
-            return
-        fi
+    if [ -e "$LIMONATA_HOME" ] || [ -L "$LIMONATA_HOME" ] ||
+       [ -e "$HOME/go/bin/limonatad" ] || [ -L "$HOME/go/bin/limonatad" ] ||
+       [ -e "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service" ] ||
+       [ -L "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service" ] ||
+       command -v limonatad >/dev/null 2>&1; then
+        echo -e "\n${RED}Existing Limonata installation detected. Fresh install refused; no node data changed.${RESET}"
+        menu
+        return
     fi
 
     echo -e "\n${GREEN}Starting installation...${RESET}"
     echo -e "${YELLOW}This may take 1-5 minutes. Please don't interrupt the process.${RESET}"
     sleep 2
 
-    if ! run_pinned_valley_child limonata_node_install_testnet.sh LIMONATA_REDEPLOY_CONFIRMED=1; then
+    if ! run_pinned_valley_child limonata_node_install_testnet.sh; then
         echo -e "${RED}Installer child script failed or was refused. No success was recorded.${RESET}"
     fi
     hash -r

@@ -52,8 +52,8 @@ SHA-256 above before installation.
 ## Build from source
 
 The tagged source is pinned to the same full commit. The upstream v0.3.6
-`go.mod` declares Go `1.25.9`; Valley currently installs Go `1.26.5` for its
-source-build/Cosmovisor toolchain.
+`go.mod` declares Go `1.25.9`; Valley installs the pinned Go `1.26.8` toolchain
+only when the operator selects the source-build path.
 
 ```bash
 git clone --depth 1 --branch limonata-v0.3.6 \
@@ -80,7 +80,9 @@ $HOME/go/bin/limonatad --home "$LIMONATA_HOME" genesis validate-genesis
 ## Cosmovisor layout
 
 New Valley deployments run `limonatad` through Cosmovisor from the start. The
-installer pins Cosmovisor `v1.7.1`, disables binary auto-downloads, and creates:
+installer pins the official Cosmovisor `v1.7.3` Linux AMD64 release artifact
+by SHA-256 and disables binary auto-downloads. It creates the following
+per-node layout:
 
 ```text
 $HOME/.limonatad/cosmovisor/
@@ -89,6 +91,12 @@ $HOME/.limonatad/cosmovisor/
   upgrades/
   backup/
 ```
+
+The verified Cosmovisor executable is installed in the Limonata-private path
+`$HOME/.local/libexec/valley-of-limonata/cosmovisor`, rather than replacing
+`/usr/local/bin/cosmovisor` (which may be used by other chains). An existing
+private executable is reused only when it is byte-identical to the verified
+release artifact; other files and symlinks fail closed.
 
 The user-facing command remains:
 
