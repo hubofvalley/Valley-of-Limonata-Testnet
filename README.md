@@ -19,6 +19,7 @@ Supported platform: Linux x86_64 (AMD64).
 - Binary command: `~/go/bin/limonatad`
 - Reviewed release: `limonata-v0.3.6` (`effa377d673fc6f0fb307a78ca54e037e53060f7`)
 - Process manager: Cosmovisor (`v1.7.3`, pinned official release artifact)
+- Cosmovisor executable: `~/.local/libexec/valley-of-limonata/cosmovisor` (never overwrites a host-global binary)
 - Active binary target: `~/.limonatad/cosmovisor/current/bin/limonatad`
 - Service: `limonatad.service`
 - Genesis: https://limonata.xyz/genesis.json

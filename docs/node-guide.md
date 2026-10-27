@@ -81,7 +81,8 @@ $HOME/go/bin/limonatad --home "$LIMONATA_HOME" genesis validate-genesis
 
 New Valley deployments run `limonatad` through Cosmovisor from the start. The
 installer pins the official Cosmovisor `v1.7.3` Linux AMD64 release artifact
-by SHA-256, disables binary auto-downloads, and creates:
+by SHA-256 and disables binary auto-downloads. It creates the following
+per-node layout:
 
 ```text
 $HOME/.limonatad/cosmovisor/
@@ -90,6 +91,12 @@ $HOME/.limonatad/cosmovisor/
   upgrades/
   backup/
 ```
+
+The verified Cosmovisor executable is installed in the Limonata-private path
+`$HOME/.local/libexec/valley-of-limonata/cosmovisor`, rather than replacing
+`/usr/local/bin/cosmovisor` (which may be used by other chains). An existing
+private executable is reused only when it is byte-identical to the verified
+release artifact; other files and symlinks fail closed.
 
 The user-facing command remains:
 

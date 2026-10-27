@@ -26,7 +26,9 @@ readonly COSMOVISOR_RELEASE_BASE="https://github.com/cosmos/cosmos-sdk/releases/
 readonly GO_VERSION="1.26.8"
 readonly GO_LINUX_AMD64_SHA256="d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b"
 readonly GO_ROOT="$HOME/.local/go-${GO_VERSION}"
-readonly COSMOVISOR_BIN="/usr/local/bin/cosmovisor"
+# Keep the process manager private to Limonata. A global Cosmovisor binary may
+# be used by other Cosmos validators on this host and must never be overwritten.
+readonly COSMOVISOR_BIN="$HOME/.local/libexec/valley-of-limonata/cosmovisor"
 readonly LIMONATA_BIN_DIR="$HOME/go/bin"
 readonly LIMONATA_BIN="$LIMONATA_BIN_DIR/limonatad"
 
@@ -213,6 +215,7 @@ install_go_toolchain() {
 install_cosmovisor() {
     local archive="$WORKDIR/${COSMOVISOR_ARTIFACT}"
     local extract_dir="$WORKDIR/cosmovisor-release"
+    local binary_dir staged_private
 
     echo "Installing pinned Cosmovisor ${COSMOVISOR_VERSION} from the verified release artifact..."
     curl -fsSL "${COSMOVISOR_RELEASE_BASE}/${COSMOVISOR_ARTIFACT}" -o "$archive"
@@ -223,7 +226,31 @@ install_cosmovisor() {
         echo "Verified Cosmovisor archive does not contain the expected binary."
         exit 1
     fi
-    sudo install -m 0755 "$extract_dir/cosmovisor" "$COSMOVISOR_BIN"
+    binary_dir=$(dirname -- "$COSMOVISOR_BIN")
+    mkdir -p "$binary_dir"
+    if [ -L "$COSMOVISOR_BIN" ]; then
+        echo "Refusing an existing Cosmovisor symlink in the Limonata-private path."
+        exit 1
+    fi
+    if [ -e "$COSMOVISOR_BIN" ]; then
+        if [ ! -f "$COSMOVISOR_BIN" ] || [ ! -x "$COSMOVISOR_BIN" ] ||
+           ! cmp -s "$extract_dir/cosmovisor" "$COSMOVISOR_BIN"; then
+            echo "Refusing to overwrite an unknown Limonata-private Cosmovisor binary."
+            exit 1
+        fi
+        echo "Reusing byte-identical pinned Cosmovisor from the Limonata-private path."
+    else
+        # Link an already-staged executable exclusively: ln -T fails if another
+        # process created the destination, rather than replacing its bytes.
+        staged_private=$(mktemp "$binary_dir/.cosmovisor.XXXXXXXX")
+        if ! install -m 0755 "$extract_dir/cosmovisor" "$staged_private" ||
+           ! ln -T "$staged_private" "$COSMOVISOR_BIN"; then
+            rm -f -- "$staged_private"
+            echo "Refusing to replace a concurrently created Cosmovisor path."
+            exit 1
+        fi
+        rm -f -- "$staged_private"
+    fi
     "$COSMOVISOR_BIN" --help >/dev/null
 }
 

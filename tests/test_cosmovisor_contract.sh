@@ -26,6 +26,11 @@ grep -Fq 'readonly GO_VERSION="1.26.8"' "$installer" || fail "installer Go toolc
 grep -Fq 'readonly GO_LINUX_AMD64_SHA256="d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b"' "$installer" || fail "installer Go archive SHA256 is not pinned"
 grep -Fq 'readonly LIMONATA_BIN_DIR="$HOME/go/bin"' "$installer" || fail "Limonata binary dir is not ~/go/bin"
 grep -Fq 'readonly LIMONATA_BIN="$LIMONATA_BIN_DIR/limonatad"' "$installer" || fail "Limonata binary path is not ~/go/bin/limonatad"
+grep -Fq 'readonly COSMOVISOR_BIN="$HOME/.local/libexec/valley-of-limonata/cosmovisor"' "$installer" || fail "Cosmovisor must be Limonata-private"
+if grep -Fq '/usr/local/bin/cosmovisor' "$installer"; then
+    fail "installer must never write a host-global Cosmovisor"
+fi
+grep -Fq 'ln -T "$staged_private" "$COSMOVISOR_BIN"' "$installer" || fail "Cosmovisor private install must be exclusive"
 
 if grep -Fq '/releases/latest/' "$installer"; then
     fail "fresh installer must not select a mutable latest release"
@@ -69,6 +74,7 @@ jq -e '.components.validator.cosmovisor.used == true' "$versions" >/dev/null || 
 jq -e '.components.validator.cosmovisor.release_artifact == "cosmovisor-v1.7.3-linux-amd64.tar.gz"' "$versions" >/dev/null || fail "VERSIONS Cosmovisor artifact mismatch"
 jq -e '.components.validator.cosmovisor.artifact_sha256 == "3df6ef38cf976b00d226f391dc6866b8dc4040fc2f1b4a780d248f6e1cc9332e"' "$versions" >/dev/null || fail "VERSIONS Cosmovisor digest mismatch"
 jq -e '.components.validator.cosmovisor.install_method == "verified_release_artifact"' "$versions" >/dev/null || fail "VERSIONS Cosmovisor install method mismatch"
+jq -e '.components.validator.cosmovisor.binary == "$HOME/.local/libexec/valley-of-limonata/cosmovisor"' "$versions" >/dev/null || fail "VERSIONS Cosmovisor private path mismatch"
 jq -e '.components.validator.cosmovisor.allow_download_binaries == false' "$versions" >/dev/null || fail "VERSIONS must disable Cosmovisor downloads"
 jq -e '.components.validator.upgrade.consensus_breaking == true' "$versions" >/dev/null || fail "coordinated upgrade semantics missing"
 jq -e '.components.validator.upgrade.state_breaking == "not_asserted_by_upstream_release"' "$versions" >/dev/null || fail "state-breaking claim must remain non-asserted"
