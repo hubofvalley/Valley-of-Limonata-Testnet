@@ -73,6 +73,7 @@ This URL is pinned to the reviewed wrapper commit.
 - Create validator (guided `validator.json` + `tx staking create-validator`)
 - Query balance, delegate tokens, query validator status
 - Backup validator key, restart/stop/delete node
+- Read-only POSTHUMAN snapshot metadata preflight (no archive download or restore; see [limitations](docs/snapshot-preflight.md))
 
 ## Recommended validator flow
 
