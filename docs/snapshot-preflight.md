@@ -5,8 +5,15 @@ Limonata testnet snapshot. The provider currently publishes a moving `latest`
 archive, `snapshot.json` and `SHA256SUMS`. The preflight compares their declared
 chain, filename, size and digest; checks the archive's HTTP `Content-Length`
 without downloading archive bytes; checks two reviewed public CometBFT RPCs for
-chain ID, height and sync status; and fails closed if provider metadata changes
-during the check.
+chain ID, height, sync status and recent latest-block timestamps; and fails
+closed if provider metadata changes during the check.
+
+The RPC freshness limit is reviewed in `VERSIONS.json` (currently 600 seconds).
+Both RPCs must report a valid UTC latest-block timestamp within that limit;
+`catching_up=false` alone does not demonstrate that a public endpoint is live.
+The check uses the operator host's UTC clock and fails closed if a timestamp is
+missing, malformed, stale or more than 60 seconds in the future. Keep the host
+clock synchronized; an incorrect clock can produce `UNKNOWN`.
 
 From a reviewed local repository checkout:
 

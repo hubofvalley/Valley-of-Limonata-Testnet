@@ -8,7 +8,7 @@ die() {
     exit 1
 }
 
-for tool in curl jq awk cmp; do
+for tool in curl jq awk cmp date; do
     command -v "$tool" >/dev/null 2>&1 || die "missing command: $tool"
 done
 
@@ -35,6 +35,9 @@ chain_id=$(manifest_value '.chain.chain_id') || die "missing manifest chain ID"
 snapshot_base=$(manifest_value '.network_facts.snapshot_url') || die "missing snapshot provider"
 rpc_a=$(manifest_value '.network_facts.state_sync_rpc') || die "missing primary CometBFT RPC"
 rpc_b=$(manifest_value '.network_facts.snapshot_secondary_rpc') || die "missing secondary CometBFT RPC"
+max_block_age=$(jq -er '.network_facts.snapshot_rpc_max_block_age_seconds | select(type == "number" and . == floor and . >= 60 and . <= 3600) | tostring' "$VERSIONS") || die "missing or invalid RPC freshness policy"
+now_epoch=$(date -u +%s) || die "cannot read UTC clock"
+[[ "$now_epoch" =~ ^[1-9][0-9]*$ ]] || die "invalid UTC clock"
 
 # No override accepting local or arbitrary remote URLs: only reviewed manifest hosts.
 for endpoint in "$snapshot_base" "$rpc_a" "$rpc_b"; do
@@ -86,13 +89,19 @@ http_size=$(awk '{ gsub("\r", ""); if ($1 ~ /^HTTP\//) value=""; if (tolower($1)
 [ "$http_size" = "$size" ] || die "archive size does not match metadata"
 
 check_rpc() {
-    local endpoint=$1 response=$2 rpc_chain rpc_height syncing
+    local endpoint=$1 response=$2 rpc_chain rpc_height syncing block_time block_epoch
     fetch_small "$endpoint/status" "$response"
     rpc_chain=$(jq -er '.result.node_info.network | select(type == "string")' "$response") || die "RPC chain ID unavailable"
     rpc_height=$(jq -er '.result.sync_info.latest_block_height | select(type == "string" or type == "number") | tostring' "$response") || die "RPC height unavailable"
+    block_time=$(jq -er '.result.sync_info.latest_block_time | select(type == "string")' "$response") || die "RPC latest block time unavailable"
     syncing=$(jq -r '.result.sync_info.catching_up | select(type == "boolean")' "$response") || die "RPC sync status unavailable"
     [ "$rpc_chain" = "$chain_id" ] || die "public RPC chain ID mismatch"
     safe_height "$rpc_height" || die "invalid or unsafe public RPC height"
+    [[ "$block_time" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?Z$ ]] || die "invalid public RPC block timestamp"
+    block_epoch=$(date -u -d "$block_time" +%s 2>/dev/null) || die "unparseable public RPC block timestamp"
+    [[ "$block_epoch" =~ ^[1-9][0-9]*$ ]] || die "invalid public RPC block epoch"
+    (( block_epoch <= now_epoch + 60 )) || die "public RPC block timestamp is in the future"
+    (( now_epoch - block_epoch <= max_block_age )) || die "public RPC latest block is stale"
     [[ "$syncing" == false || "$syncing" == true ]] || die "RPC sync status unavailable"
     [ "$syncing" = false ] || die "public RPC is catching up"
     [ "$rpc_height" -ge "$height" ] || die "snapshot height exceeds public RPC height"

@@ -88,6 +88,7 @@
     "state_sync_rpc": "https://cosmos-rpc.limonata.xyz",
     "snapshot_url": "https://snapshots-limonata.posthuman.digital",
     "snapshot_secondary_rpc": "https://rpc-limonata.posthuman.digital",
+    "snapshot_rpc_max_block_age_seconds": 600,
     "explorer_url": "UNKNOWN"
   }
 }

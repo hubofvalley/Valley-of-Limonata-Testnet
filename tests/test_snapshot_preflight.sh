@@ -44,6 +44,17 @@ esac
 MOCK
 chmod +x "$tmp/fake-bin/curl"
 
+# Freeze the clock for reproducible RPC freshness regression cases.
+cat > "$tmp/fake-bin/date" <<'MOCK_DATE'
+#!/usr/bin/env bash
+if [ "$#" -eq 2 ] && [ "$1" = '-u' ] && [ "$2" = '+%s' ]; then
+    /usr/bin/date -u -d '2026-10-28T06:00:00Z' +%s
+else
+    exec /usr/bin/date "$@"
+fi
+MOCK_DATE
+chmod +x "$tmp/fake-bin/date"
+
 digest=5b4dee0d19a954c47927d68f3dc12fb780976587c7d9f13824e5a02ce7828d1b
 reset_fixtures() {
     rm -f "$tmp/state/metadata_seen"
@@ -53,7 +64,7 @@ EOF
     cp "$tmp/fixtures/metadata.json" "$tmp/fixtures/metadata-rotated.json"
     printf '%s  %s\n' "$digest" 'limonata_10777-1-latest.tar.lz4' > "$tmp/fixtures/SHA256SUMS"
     printf 'HTTP/2 200\r\nContent-Length: 44529407354\r\n\r\n' > "$tmp/fixtures/headers"
-    printf '%s\n' '{"result":{"node_info":{"network":"limonata_10777-1"},"sync_info":{"latest_block_height":"4795141","catching_up":false}}}' > "$tmp/fixtures/rpc-a.json"
+    printf '%s\n' '{"result":{"node_info":{"network":"limonata_10777-1"},"sync_info":{"latest_block_height":"4795141","latest_block_time":"2026-10-28T05:58:00.000000000Z","catching_up":false}}}' > "$tmp/fixtures/rpc-a.json"
     cp "$tmp/fixtures/rpc-a.json" "$tmp/fixtures/rpc-b.json"
 }
 
@@ -122,6 +133,27 @@ jq '.result.sync_info.catching_up=true' "$tmp/fixtures/rpc-a.json" > "$tmp/fixtu
 expect_unknown 'catching-up RPC'
 
 reset_fixtures
+jq '.result.sync_info.latest_block_time="2026-10-27T21:58:55.523881573Z"' "$tmp/fixtures/rpc-a.json" > "$tmp/fixtures/changed" && mv "$tmp/fixtures/changed" "$tmp/fixtures/rpc-a.json"
+expect_unknown 'stale RPC despite catching_up=false and height above snapshot'
+
+reset_fixtures
+jq 'del(.result.sync_info.latest_block_time)' "$tmp/fixtures/rpc-b.json" > "$tmp/fixtures/changed" && mv "$tmp/fixtures/changed" "$tmp/fixtures/rpc-b.json"
+expect_unknown 'missing RPC latest block time'
+
+reset_fixtures
+jq '.result.sync_info.latest_block_time="yesterday"' "$tmp/fixtures/rpc-a.json" > "$tmp/fixtures/changed" && mv "$tmp/fixtures/changed" "$tmp/fixtures/rpc-a.json"
+expect_unknown 'malformed RPC latest block time'
+
+reset_fixtures
+jq '.result.sync_info.latest_block_time="2026-10-28T06:01:01Z"' "$tmp/fixtures/rpc-b.json" > "$tmp/fixtures/changed" && mv "$tmp/fixtures/changed" "$tmp/fixtures/rpc-b.json"
+expect_unknown 'RPC block timestamp beyond future-skew allowance'
+
+reset_fixtures
+jq '.result.sync_info.latest_block_time="2026-10-28T05:50:00Z"' "$tmp/fixtures/rpc-a.json" > "$tmp/fixtures/changed" && mv "$tmp/fixtures/changed" "$tmp/fixtures/rpc-a.json"
+run_case || { cat "$tmp/result" >&2; exit 1; }
+printf 'PASS: RPC block at exact age limit accepted\n'
+
+reset_fixtures
 jq '.result.sync_info.latest_block_height="4789770"' "$tmp/fixtures/rpc-a.json" > "$tmp/fixtures/changed" && mv "$tmp/fixtures/changed" "$tmp/fixtures/rpc-a.json"
 expect_unknown 'RPC behind snapshot'
 
@@ -150,5 +182,10 @@ expect_unknown 'RPC height outside safe integer range'
 reset_fixtures
 jq '.network_facts.snapshot_url="UNKNOWN"' "$tmp/repo/VERSIONS.json" > "$tmp/repo/changed" && mv "$tmp/repo/changed" "$tmp/repo/VERSIONS.json"
 expect_unknown 'unconfigured provider'
+
+reset_fixtures
+cp "$root/VERSIONS.json" "$tmp/repo/VERSIONS.json"
+jq '.network_facts.snapshot_rpc_max_block_age_seconds=0' "$tmp/repo/VERSIONS.json" > "$tmp/repo/changed" && mv "$tmp/repo/changed" "$tmp/repo/VERSIONS.json"
+expect_unknown 'invalid RPC freshness policy'
 
 printf 'Snapshot metadata preflight regression checks passed.\n'
