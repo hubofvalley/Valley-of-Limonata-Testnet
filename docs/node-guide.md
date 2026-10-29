@@ -151,6 +151,13 @@ requires two distinct RPC endpoints to agree on the same trusted commit before
 enabling state sync. The second endpoint is an independent witness, not a binary
 or software trust source.
 
+The manual snippet below illustrates the trusted-hash calculation only; it is
+**not** a complete safety preflight and must not be treated as approval to
+restart or restore an existing validator. The Valley installer additionally
+checks both latest block timestamps against a 600-second age limit and a
+60-second future-clock tolerance. Missing, malformed, or stale RPC evidence
+fails closed; use genesis sync if the independent sources are unavailable.
+
 ```bash
 CFG="$HOME/.limonatad/config/config.toml"
 PRIMARY_RPC="https://cosmos-rpc.limonata.xyz"
@@ -174,7 +181,8 @@ sed -i "/^\[statesync\]/,/^\[/ { \
 
 The installer additionally verifies both endpoints report
 `limonata_10777-1`, are not catching up, return the requested commit height,
-and return a valid 64-hex commit hash. Advanced operators can override the two
+have fresh valid latest-block timestamps, and return a valid 64-hex commit hash.
+Advanced operators can override the two
 RPC URLs for the installer with `LIMONATA_STATE_SYNC_PRIMARY_RPC` and
 `LIMONATA_STATE_SYNC_WITNESS_RPC`; the values must remain distinct.
 

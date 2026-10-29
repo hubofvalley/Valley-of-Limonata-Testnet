@@ -345,18 +345,34 @@ normalize_state_sync_rpc() {
     printf '%s' "${rpc%/}"
 }
 
+state_sync_now_epoch() {
+    date -u +%s
+}
+
 fetch_state_sync_rpc_height() {
-    local rpc=$1 payload network height catching_up
+    local rpc=$1 payload network height block_time block_epoch now_epoch catching_up
+    # Local operator-readiness policy, not a protocol/unbonding-time guarantee.
+    local max_age_seconds=600 max_future_skew_seconds=60
 
     payload=$(curl -fsS --max-time 15 "$rpc/status") || return 1
     network=$(jq -r '.result.node_info.network // empty' <<<"$payload")
     height=$(jq -r '.result.sync_info.latest_block_height // empty' <<<"$payload")
+    block_time=$(jq -r '.result.sync_info.latest_block_time // empty' <<<"$payload")
     catching_up=$(jq -r '.result.sync_info.catching_up' <<<"$payload")
 
     [ "$network" = "limonata_10777-1" ] || return 1
-    [[ "$height" =~ ^[0-9]+$ ]] || return 1
+    [[ "$height" =~ ^[1-9][0-9]{0,15}$ ]] || return 1
+    if [ "${#height}" -eq 16 ] && [ "$height" -gt 9007199254740991 ]; then
+        return 1
+    fi
     [ "$height" -gt 2000 ] || return 1
     [ "$catching_up" = "false" ] || return 1
+    [[ "$block_time" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$ ]] || return 1
+    block_epoch=$(date -u -d "$block_time" +%s 2>/dev/null) || return 1
+    now_epoch=$(state_sync_now_epoch) || return 1
+    [[ "$block_epoch" =~ ^[1-9][0-9]*$ && "$now_epoch" =~ ^[1-9][0-9]*$ ]] || return 1
+    [ "$block_epoch" -le "$((now_epoch + max_future_skew_seconds))" ] || return 1
+    [ "$((now_epoch - block_epoch))" -le "$max_age_seconds" ] || return 1
 
     printf '%s' "$height"
 }
@@ -389,11 +405,11 @@ configure_state_sync() {
     fi
 
     if ! primary_latest=$(fetch_state_sync_rpc_height "$primary_rpc"); then
-        echo "Primary state-sync RPC is unavailable, catching up, or on the wrong chain." >&2
+        echo "Primary state-sync RPC is unavailable, stale, malformed, catching up, or on the wrong chain." >&2
         return 1
     fi
     if ! witness_latest=$(fetch_state_sync_rpc_height "$witness_rpc"); then
-        echo "Witness state-sync RPC is unavailable, catching up, or on the wrong chain." >&2
+        echo "Witness state-sync RPC is unavailable, stale, malformed, catching up, or on the wrong chain." >&2
         return 1
     fi
 

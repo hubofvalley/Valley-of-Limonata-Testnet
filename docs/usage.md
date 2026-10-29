@@ -135,7 +135,9 @@ scripts unless their local SHA-256 matches its reviewed pins.
 - **Custom pruning ON**: uses `keep-recent=100` and `interval=19`.
 - **State sync ON**: starts from trusted state only after the official CometBFT
   RPC and a distinct witness RPC agree on the same trusted commit. If either
-  endpoint is unhealthy, on the wrong chain, or disagrees on the hash, the
+  endpoint is unhealthy, on the wrong chain, has a missing or stale latest-block
+  timestamp (older than 600 seconds or more than 60 seconds in the future), or
+  disagrees on the hash, the
   installer refuses state sync and offers normal genesis sync instead. If you
   explicitly want to execute from block 1, choose state sync OFF.
 - **UFW ON**: preserves the SSH port you provide and opens the selected Limonata
