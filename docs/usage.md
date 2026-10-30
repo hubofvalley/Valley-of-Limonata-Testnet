@@ -7,7 +7,7 @@ How to run the tool, navigate it, and understand each menu option.
 Run the reviewed wrapper directly:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/0739abeb408e23f31f9f2c94ea2817b3f8c6d347/resources/valleyofLimonata.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/7c295eacacae7de04c91d9b7a9cf3d863cd77a74/resources/valleyofLimonata.sh)
 ```
 
 This URL is pinned to the reviewed wrapper commit. The wrapper downloads child scripts from immutable commit URLs with `curl -fsSL`
@@ -133,9 +133,13 @@ scripts unless their local SHA-256 matches its reviewed pins.
   resolves to the pinned full commit.
 - **Transaction indexer ON**: keeps `indexer = "kv"`; OFF uses `"null"`.
 - **Custom pruning ON**: uses `keep-recent=100` and `interval=19`.
-- **State sync ON**: starts from trusted state obtained from the official
-  CometBFT RPC. If you explicitly want to execute from block 1, choose state
-  sync OFF.
+- **State sync ON**: starts from trusted state only after the official CometBFT
+  RPC and a distinct witness RPC agree on the same trusted commit. If either
+  endpoint is unhealthy, on the wrong chain, has a missing or stale latest-block
+  timestamp (older than 600 seconds or more than 60 seconds in the future), or
+  disagrees on the hash, the
+  installer refuses state sync and offers normal genesis sync instead. If you
+  explicitly want to execute from block 1, choose state sync OFF.
 - **UFW ON**: preserves the SSH port you provide and opens the selected Limonata
   P2P port.
 

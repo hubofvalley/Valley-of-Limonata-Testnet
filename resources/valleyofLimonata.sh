@@ -23,9 +23,9 @@ LIMONATA_CHAIN_ID=${LIMONATA_CHAIN_ID:-limonata_10777-1}
 LIMONATA_EVM_CHAIN_ID=${LIMONATA_EVM_CHAIN_ID:-10777}
 LIMONATA_STAKING_GAS_PRICE=${LIMONATA_STAKING_GAS_PRICE:-1000000000aLIMO}
 LIMONATA_TARGET_VERSION=${LIMONATA_TARGET_VERSION:-limonata-v0.3.6}
-readonly VALLEY_INSTALLER_SHA256="e42a89a398bbd0430eceb782c59ce652444e99be7452c7d26263342820082a26"
+readonly VALLEY_INSTALLER_SHA256="76245d6ba9b1c961f25ce8c0400d64a0bab074ea5ea3508aaadd361da36780d5"
 readonly VALLEY_UPDATER_SHA256="356f02693b2cd39fd34ebafc57ba268ea59641944d0a8e54892202acf09cf2dc"
-readonly VALLEY_SCRIPT_COMMIT="d4b100bb926b6fd0392c29b0bc0ae61dcb21468f"
+readonly VALLEY_SCRIPT_COMMIT="bc382004b98816cccf3314080b7109a3c2c3c9d8"
 readonly VALLEY_SCRIPT_BASE="https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/${VALLEY_SCRIPT_COMMIT}/resources"
 VALLEY_SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 VALLEY_REMOTE_TMP=""
@@ -132,7 +132,8 @@ ${GREEN}Network facts:${RESET}
 - Chain ID: ${CYAN}limonata_10777-1${RESET} | EVM Chain ID: ${CYAN}10777${RESET} (hex: 0x2a19)
 - Seed/peer: ${CYAN}4b154368aab24cb5b31c927efd50c73d0f4f9799@142.127.103.79:26656${RESET}
 - Genesis: ${BLUE}https://limonata.xyz/genesis.json${RESET}
-- State-sync RPC: ${BLUE}https://cosmos-rpc.limonata.xyz${RESET}
+- State-sync primary RPC: ${BLUE}https://rpc-limonata.posthuman.digital${RESET}
+- State-sync witness RPC: ${BLUE}https://limonata.rpc.t.anode.team${RESET}
 - No staking inflation (x/mint disabled) - validators earn tx fees + commission
 - Staking gas price: ${CYAN}${LIMONATA_STAKING_GAS_PRICE}${RESET}
 
