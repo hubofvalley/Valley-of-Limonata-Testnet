@@ -58,6 +58,9 @@ height='3303453'
 if [ "${FAKE_MODE:-ok}" = "witness-down" ] && [[ "$url" == "$witness"* ]]; then
     exit 22
 fi
+if [ "${FAKE_MODE:-ok}" = "primary-down" ] && [[ "$url" == "$primary"* ]]; then
+    exit 22
+fi
 if [ "${FAKE_MODE:-ok}" = "wrong-chain" ] && [[ "$url" == "$witness/status" ]]; then
     chain='other-chain'
 fi
@@ -145,6 +148,11 @@ make_config
 unset LIMONATA_STATE_SYNC_PRIMARY_RPC LIMONATA_STATE_SYNC_WITNESS_RPC
 TEST_DEFAULT_RPC_PAIR=1 FAKE_MODE=ok configure_state_sync >/dev/null || fail "reviewed default RPC pair was rejected"
 grep -Fq 'rpc_servers = "https://rpc-limonata.posthuman.digital,https://limonata.rpc.t.anode.team"' "$CFG" || fail "reviewed default RPC pair was not written"
+make_config
+if TEST_DEFAULT_RPC_PAIR=1 FAKE_MODE=primary-down configure_state_sync >/dev/null 2>&1; then
+    fail "unavailable reviewed default primary was accepted"
+fi
+grep -Fq 'enable = false' "$CFG" || fail "failed default primary mutated state sync"
 export LIMONATA_STATE_SYNC_PRIMARY_RPC='https://primary.example/'
 export LIMONATA_STATE_SYNC_WITNESS_RPC='https://witness.example/'
 
