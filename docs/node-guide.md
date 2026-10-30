@@ -158,9 +158,16 @@ checks both latest block timestamps against a 600-second age limit and a
 60-second future-clock tolerance. Missing, malformed, or stale RPC evidence
 fails closed; use genesis sync if the independent sources are unavailable.
 
+On 2026-10-30, the previous default CometBFT RPC
+`https://cosmos-rpc.limonata.xyz` returned HTTP 502, while the POSTHUMAN and
+ANODE endpoints returned matching chain identity, current block hashes, and a
+historical trusted commit. Valley uses these two reviewed third-party endpoints
+as defaults, not as a guarantee of future availability or independence. The
+installer must verify both at execution time; no automatic unsafe fallback.
+
 ```bash
 CFG="$HOME/.limonatad/config/config.toml"
-PRIMARY_RPC="https://cosmos-rpc.limonata.xyz"
+PRIMARY_RPC="https://rpc-limonata.posthuman.digital"
 WITNESS_RPC="https://limonata.rpc.t.anode.team"
 
 PRIMARY_HEIGHT=$(curl -fsS "$PRIMARY_RPC/status" | jq -r '.result.sync_info.latest_block_height')

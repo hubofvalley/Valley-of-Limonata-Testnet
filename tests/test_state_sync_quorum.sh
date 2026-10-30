@@ -47,6 +47,10 @@ set -euo pipefail
 url=${!#}
 primary='https://primary.example'
 witness='https://witness.example'
+if [ "${TEST_DEFAULT_RPC_PAIR:-0}" = "1" ]; then
+    primary='https://rpc-limonata.posthuman.digital'
+    witness='https://limonata.rpc.t.anode.team'
+fi
 chain='limonata_10777-1'
 block_time='2026-10-29T06:06:00.630572113Z'
 height='3303453'
@@ -136,6 +140,13 @@ FAKE_MODE=ok configure_state_sync >/dev/null || fail "matching independent RPCs 
 grep -Fq 'rpc_servers = "https://primary.example,https://witness.example"' "$CFG" || fail "distinct RPCs were not written"
 grep -Fq 'trust_height = 3301000' "$CFG" || fail "common trust height was not selected"
 grep -Fq 'trust_hash = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"' "$CFG" || fail "agreed trust hash was not written"
+
+make_config
+unset LIMONATA_STATE_SYNC_PRIMARY_RPC LIMONATA_STATE_SYNC_WITNESS_RPC
+TEST_DEFAULT_RPC_PAIR=1 FAKE_MODE=ok configure_state_sync >/dev/null || fail "reviewed default RPC pair was rejected"
+grep -Fq 'rpc_servers = "https://rpc-limonata.posthuman.digital,https://limonata.rpc.t.anode.team"' "$CFG" || fail "reviewed default RPC pair was not written"
+export LIMONATA_STATE_SYNC_PRIMARY_RPC='https://primary.example/'
+export LIMONATA_STATE_SYNC_WITNESS_RPC='https://witness.example/'
 
 make_config
 set +e

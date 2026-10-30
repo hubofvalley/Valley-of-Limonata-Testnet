@@ -132,7 +132,8 @@ ${GREEN}Network facts:${RESET}
 - Chain ID: ${CYAN}limonata_10777-1${RESET} | EVM Chain ID: ${CYAN}10777${RESET} (hex: 0x2a19)
 - Seed/peer: ${CYAN}4b154368aab24cb5b31c927efd50c73d0f4f9799@142.127.103.79:26656${RESET}
 - Genesis: ${BLUE}https://limonata.xyz/genesis.json${RESET}
-- State-sync RPC: ${BLUE}https://cosmos-rpc.limonata.xyz${RESET}
+- State-sync primary RPC: ${BLUE}https://rpc-limonata.posthuman.digital${RESET}
+- State-sync witness RPC: ${BLUE}https://limonata.rpc.t.anode.team${RESET}
 - No staking inflation (x/mint disabled) - validators earn tx fees + commission
 - Staking gas price: ${CYAN}${LIMONATA_STAKING_GAS_PRICE}${RESET}
 

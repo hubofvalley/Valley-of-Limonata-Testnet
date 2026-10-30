@@ -396,7 +396,7 @@ configure_state_sync() {
     local primary_rpc witness_rpc primary_latest witness_latest latest trust
     local primary_hash witness_hash
 
-    primary_rpc=$(normalize_state_sync_rpc "${LIMONATA_STATE_SYNC_PRIMARY_RPC:-https://cosmos-rpc.limonata.xyz}")
+    primary_rpc=$(normalize_state_sync_rpc "${LIMONATA_STATE_SYNC_PRIMARY_RPC:-https://rpc-limonata.posthuman.digital}")
     witness_rpc=$(normalize_state_sync_rpc "${LIMONATA_STATE_SYNC_WITNESS_RPC:-https://limonata.rpc.t.anode.team}")
 
     if [ -z "$primary_rpc" ] || [ -z "$witness_rpc" ] || [ "$primary_rpc" = "$witness_rpc" ]; then
