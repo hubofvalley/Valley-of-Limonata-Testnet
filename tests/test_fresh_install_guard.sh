@@ -74,4 +74,8 @@ if grep -Fq 'sudo rm -rf "$HOME/.limonatad"' "$installer"; then fail "destructiv
 if grep -Fq 'LIMONATA_REDEPLOY_CONFIRMED' "$installer"; then fail "redeploy bypass remains"; fi
 if grep -Fq 'LIMONATA_REDEPLOY_CONFIRMED' "$wrapper"; then fail "wrapper still passes bypass"; fi
 if grep -Fq 'Type REDEPLOY' "$wrapper"; then fail "wrapper still offers destructive redeploy"; fi
+if grep -Fq 'REDEPLOY' "$wrapper" || grep -Fq 'Re-deploy' "$wrapper" || grep -Fq 're-deploy' "$wrapper"; then
+    fail "operator menu or guidelines still advertise redeploy"
+fi
+grep -Fq 'Deploy Limonata Node (Fresh Install Only)' "$wrapper" || fail "menu does not describe fresh-install restriction"
 echo "Fresh-install fail-closed regression tests passed."

@@ -23,9 +23,9 @@ LIMONATA_CHAIN_ID=${LIMONATA_CHAIN_ID:-limonata_10777-1}
 LIMONATA_EVM_CHAIN_ID=${LIMONATA_EVM_CHAIN_ID:-10777}
 LIMONATA_STAKING_GAS_PRICE=${LIMONATA_STAKING_GAS_PRICE:-1000000000aLIMO}
 LIMONATA_TARGET_VERSION=${LIMONATA_TARGET_VERSION:-limonata-v0.3.6}
-readonly VALLEY_INSTALLER_SHA256="76245d6ba9b1c961f25ce8c0400d64a0bab074ea5ea3508aaadd361da36780d5"
+readonly VALLEY_INSTALLER_SHA256="cd57f34fafedba54751aa49e81a6c2dafe708970c75cb9e1a363fd1088497b18"
 readonly VALLEY_UPDATER_SHA256="356f02693b2cd39fd34ebafc57ba268ea59641944d0a8e54892202acf09cf2dc"
-readonly VALLEY_SCRIPT_COMMIT="bc382004b98816cccf3314080b7109a3c2c3c9d8"
+readonly VALLEY_SCRIPT_COMMIT="88d255495af5781e7e4afb8c3f05753dacb07670"
 readonly VALLEY_SCRIPT_BASE="https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/${VALLEY_SCRIPT_COMMIT}/resources"
 VALLEY_SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 VALLEY_REMOTE_TMP=""
@@ -916,7 +916,7 @@ function show_guidelines() {
     echo -e "${GREEN}Navigation:${RESET}"
     echo " - Enter the number/letter pair (e.g., 1a) or type the number then the letter."
     echo " - Reply to normal confirmations with 'yes' or 'no'; press Enter to accept displayed defaults."
-    echo " - Destructive actions require the exact words REDEPLOY or DELETE; backup replacement requires OVERWRITE."
+    echo " - Node deletion requires the exact word DELETE; backup replacement requires OVERWRITE."
     echo " - Run the script as the same user that owns ~/.limonatad to avoid permission issues."
     echo -e "${GREEN}Recommended flow for a new validator:${RESET}"
     echo " - 1a Deploy node -> wait until 1d shows catching_up=false"
@@ -925,7 +925,7 @@ function show_guidelines() {
     echo " - 2c Create validator -> build a reliable track record"
     echo " - Apply at https://limonata.xyz/#validator with the valoper address and a new, never-funded grant wallet"
     echo -e "${GREEN}Menu options:${RESET}"
-    echo " - 1a Deploy/re-deploy the node with the reviewed binary and Cosmovisor; re-deploy permanently replaces existing node data."
+    echo " - 1a Deploy a fresh node with the reviewed binary and private Cosmovisor; existing node data, binaries or services are refused."
     echo " - 1b Check the reviewed binary target; Cosmovisor-managed nodes refuse direct replacement."
     echo " - 1c Add peers manually or restore the official peer."
     echo " - 1d Show local RPC status, sync state, and the network height gap."
@@ -947,7 +947,7 @@ function show_guidelines() {
     echo " - Operator-facing limonatad path: $HOME/go/bin/limonatad."
     echo " - After deploying or updating, use 1d (status) and 1e (logs) to verify the node."
     echo " - Run 'source ~/.bash_profile' after exiting to refresh saved environment variables in your login shell."
-    echo " - Stop the service before deleting or redeploying to prevent lock errors."
+    echo " - Stop the service before deleting a node to prevent lock errors; recovery and migration require separate review."
     echo -e "${GREEN}Safety:${RESET}"
     echo " - Never share private keys, mnemonics, or RPC auth details."
     echo " - Testnet tokens are valueless; stake delegated by the team remains team property."
@@ -969,7 +969,7 @@ function menu() {
     echo -e "${ORANGE}Valley of Limonata Testnet${RESET}"
     echo "Main Menu:"
     echo -e "${GREEN}1. Node Interactions:${RESET}"
-    echo "   a. Deploy/Re-deploy Limonata Node"
+    echo "   a. Deploy Limonata Node (Fresh Install Only)"
     echo "   b. Update Limonata Binary"
     echo "   c. Add Peers"
     echo "   d. Show Node Status"
