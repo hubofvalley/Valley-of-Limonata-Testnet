@@ -884,19 +884,42 @@ function delete_limonata_node() {
     echo -e "${YELLOW}You are about to delete the Limonata node.${RESET}"
     echo -e "${RED}BACKUP YOUR MNEMONIC AND priv_validator_key.json BEFORE YOU DO THIS.${RESET}"
     echo -e "${RED}This permanently removes ${LIMONATA_HOME}, the service, the binary, and saved LIMONATA_* environment variables.${RESET}"
+    echo "WARNING: key-only backup does not preserve last-sign state. Use a reviewed validator recovery procedure."
     read -r -p "Type DELETE to confirm permanent deletion: " delete_confirm
     if [ "$delete_confirm" != "DELETE" ]; then
         echo -e "${GREEN}Deletion cancelled. No node data was changed.${RESET}"
         menu
         return
     fi
-    sudo systemctl stop "$LIMONATA_SERVICE_NAME" || true
-    sudo systemctl disable "$LIMONATA_SERVICE_NAME" || true
-    sudo rm -f "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service"
-    sudo systemctl daemon-reload
+    if ! sudo systemctl stop "$LIMONATA_SERVICE_NAME"; then
+        echo "Refusing deletion: service stop failed."
+        menu
+        return
+    fi
+    if ! sudo systemctl disable "$LIMONATA_SERVICE_NAME"; then
+        echo "Refusing deletion: service disable failed."
+        menu
+        return
+    fi
+    local active_state
+    if ! active_state=$(sudo systemctl show --property=ActiveState --value "$LIMONATA_SERVICE_NAME" 2>/dev/null) ||
+       [ "$active_state" != "inactive" ]; then
+        echo "Refusing deletion: service is not verified inactive."
+        menu
+        return
+    fi
+    if ! sudo rm -f "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service"; then
+        echo "Refusing node-data deletion: systemd unit removal failed."
+        menu
+        return
+    fi
+    if ! sudo systemctl daemon-reload; then
+        echo "Refusing node-data deletion: systemd reload failed."
+        menu
+        return
+    fi
     sudo rm -rf "$LIMONATA_HOME"
     rm -f "$HOME/go/bin/limonatad"
-    sudo rm -f /usr/local/bin/limonatad
     sed -i "/LIMONATA_/d" "$HOME/.bash_profile"
     hash -r
     echo -e "${RED}Limonata node deleted. Remember to clean up any keys you backed up elsewhere.${RESET}"
