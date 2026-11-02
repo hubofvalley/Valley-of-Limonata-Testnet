@@ -148,6 +148,16 @@ scripts unless their local SHA-256 matches its reviewed pins.
 ## Safety notes
 
 - Never share private keys or mnemonics.
+- Menu 3c refuses node deletion when stopping or disabling the service fails,
+  when the service is not positively verified inactive, or when systemd unit
+  removal/reload fails. It does not treat unknown service state as proof that
+  the signer stopped, or remove an unmanaged global limonatad binary.
+- Menu 3d backs up only the validator key; that does not preserve last-sign
+  state. File-based CometBFT signers normally track the last signed height,
+  round, and step in data/priv_validator_state.json; remote signers maintain
+  their own anti-double-sign state. Never run the same consensus key on two
+  active signers or restore it with stale/missing signing state. Use a reviewed
+  recovery or migration procedure before destructive decommissioning.
 - Testnet tokens are valueless.
 - Staking transactions use `1000000000aLIMO` gas price in the Valley flow.
 - Audit operational scripts before running them, especially delete, recovery, and upgrade paths.
