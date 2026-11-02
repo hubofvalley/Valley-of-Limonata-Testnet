@@ -19,11 +19,16 @@ readonly LIMONATA_ARTIFACT_SHA256="39ff376963498de120604c273d50751afc005ebeec9cb
 readonly LIMONATA_SIGNING_KEY_FINGERPRINT="A45380198F390AF69126AE12E4ECEC477C1735FB"
 readonly LIMONATA_REPO="https://github.com/Limonata-Blockchain/limonata.git"
 readonly LIMONATA_RELEASE_BASE="https://github.com/Limonata-Blockchain/limonata/releases/download/${LIMONATA_RELEASE}"
-readonly COSMOVISOR_VERSION="v1.7.1"
-readonly GO_VERSION="1.26.5"
-readonly GO_LINUX_AMD64_SHA256="5c2c3b16caefa1d968a94c1daca04a7ca301a496d9b086e17ad77bb81393f053"
+readonly COSMOVISOR_VERSION="v1.7.3"
+readonly COSMOVISOR_ARTIFACT="cosmovisor-v1.7.3-linux-amd64.tar.gz"
+readonly COSMOVISOR_ARTIFACT_SHA256="3df6ef38cf976b00d226f391dc6866b8dc4040fc2f1b4a780d248f6e1cc9332e"
+readonly COSMOVISOR_RELEASE_BASE="https://github.com/cosmos/cosmos-sdk/releases/download/cosmovisor/${COSMOVISOR_VERSION}"
+readonly GO_VERSION="1.26.8"
+readonly GO_LINUX_AMD64_SHA256="d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b"
 readonly GO_ROOT="$HOME/.local/go-${GO_VERSION}"
-readonly COSMOVISOR_BIN="/usr/local/bin/cosmovisor"
+# Keep the process manager private to Limonata. A global Cosmovisor binary may
+# be used by other Cosmos validators on this host and must never be overwritten.
+readonly COSMOVISOR_BIN="$HOME/.local/libexec/valley-of-limonata/cosmovisor"
 readonly LIMONATA_BIN_DIR="$HOME/go/bin"
 readonly LIMONATA_BIN="$LIMONATA_BIN_DIR/limonatad"
 
@@ -132,26 +137,50 @@ fi
 
 echo "Using Service Name: ${LIMONATA_SERVICE_NAME}"
 
-if { [ -d "$HOME/.limonatad" ] || [ -f "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service" ] || command -v limonatad >/dev/null 2>&1; } \
-    && [ "${LIMONATA_REDEPLOY_CONFIRMED:-0}" != "1" ]; then
-    echo "WARNING: An existing Limonata installation was detected."
-    echo "Re-deployment permanently deletes $HOME/.limonatad, including local block data and priv_validator_key.json."
-    echo "Back up validator keys and store the operator mnemonic offline before continuing."
-    read -r -p "Type REDEPLOY to confirm permanent deletion: " REDEPLOY_CONFIRM
-    if [ "$REDEPLOY_CONFIRM" != "REDEPLOY" ]; then
-        echo "Re-deployment cancelled. No existing node data was changed."
-        exit 0
-    fi
-fi
+# Fresh installation only. Neither an operator prompt nor an environment variable
+# may authorize replacing node data or an existing validator signing watermark.
+guard_fresh_limonata_install() {
+    local unit="$LIMONATA_SERVICE_NAME.service"
+    local target load_state
 
-sudo systemctl daemon-reload
-sudo systemctl stop "$LIMONATA_SERVICE_NAME" 2>/dev/null || true
-sudo systemctl disable "$LIMONATA_SERVICE_NAME" 2>/dev/null || true
-sudo rm -f "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service" 2>/dev/null || true
-sudo rm -f /usr/local/bin/limonatad 2>/dev/null || true
-rm -f "$LIMONATA_BIN" 2>/dev/null || true
-sudo rm -rf "$HOME/.limonatad" 2>/dev/null || true
-sed -i "/LIMONATA_/d" "$HOME/.bash_profile" 2>/dev/null || true
+    for target in \
+        "$HOME/.limonatad" \
+        "$LIMONATA_BIN" \
+        "/usr/local/bin/limonatad" \
+        "/etc/systemd/system/$unit" \
+        "/run/systemd/system/$unit" \
+        "/lib/systemd/system/$unit" \
+        "/usr/lib/systemd/system/$unit" \
+        "/etc/systemd/system/multi-user.target.wants/$unit"; do
+        if [ -e "$target" ] || [ -L "$target" ]; then
+            echo "REFUSED: existing node, binary, or unit path detected: $target" >&2
+            echo "This installer supports fresh installations only; use a separately reviewed recovery procedure." >&2
+            return 1
+        fi
+    done
+
+    if command -v limonatad >/dev/null 2>&1; then
+        echo "REFUSED: existing limonatad executable found in PATH." >&2
+        return 1
+    fi
+
+    if ! command -v systemctl >/dev/null 2>&1; then
+        echo "REFUSED: cannot inspect systemd unit state." >&2
+        return 1
+    fi
+    if ! load_state=$(systemctl show --no-pager --property=LoadState --value "$unit" 2>/dev/null); then
+        echo "REFUSED: systemd unit state could not be verified." >&2
+        return 1
+    fi
+    if [ "$load_state" != "not-found" ]; then
+        echo "REFUSED: systemd unit state is not fresh: $load_state" >&2
+        return 1
+    fi
+}
+
+if ! guard_fresh_limonata_install; then
+    exit 1
+fi
 
 sudo apt update -y
 sudo apt install -y curl git jq bc build-essential gcc unzip wget lz4 openssl gnupg ca-certificates
@@ -184,14 +213,47 @@ install_go_toolchain() {
 }
 
 install_cosmovisor() {
-    echo "Installing pinned Cosmovisor ${COSMOVISOR_VERSION} from the verified Go module..."
-    mkdir -p "$HOME/.local/bin"
-    GOBIN="$HOME/.local/bin" "$GO_ROOT/bin/go" install "cosmossdk.io/tools/cosmovisor/cmd/cosmovisor@${COSMOVISOR_VERSION}"
-    sudo install -m 0755 "$HOME/.local/bin/cosmovisor" "$COSMOVISOR_BIN"
+    local archive="$WORKDIR/${COSMOVISOR_ARTIFACT}"
+    local extract_dir="$WORKDIR/cosmovisor-release"
+    local binary_dir staged_private
+
+    echo "Installing pinned Cosmovisor ${COSMOVISOR_VERSION} from the verified release artifact..."
+    curl -fsSL "${COSMOVISOR_RELEASE_BASE}/${COSMOVISOR_ARTIFACT}" -o "$archive"
+    echo "${COSMOVISOR_ARTIFACT_SHA256}  ${archive}" | sha256sum -c -
+    mkdir -p "$extract_dir"
+    tar -xzf "$archive" -C "$extract_dir"
+    if [ ! -f "$extract_dir/cosmovisor" ]; then
+        echo "Verified Cosmovisor archive does not contain the expected binary."
+        exit 1
+    fi
+    binary_dir=$(dirname -- "$COSMOVISOR_BIN")
+    mkdir -p "$binary_dir"
+    if [ -L "$COSMOVISOR_BIN" ]; then
+        echo "Refusing an existing Cosmovisor symlink in the Limonata-private path."
+        exit 1
+    fi
+    if [ -e "$COSMOVISOR_BIN" ]; then
+        if [ ! -f "$COSMOVISOR_BIN" ] || [ ! -x "$COSMOVISOR_BIN" ] ||
+           ! cmp -s "$extract_dir/cosmovisor" "$COSMOVISOR_BIN"; then
+            echo "Refusing to overwrite an unknown Limonata-private Cosmovisor binary."
+            exit 1
+        fi
+        echo "Reusing byte-identical pinned Cosmovisor from the Limonata-private path."
+    else
+        # Link an already-staged executable exclusively: ln -T fails if another
+        # process created the destination, rather than replacing its bytes.
+        staged_private=$(mktemp "$binary_dir/.cosmovisor.XXXXXXXX")
+        if ! install -m 0755 "$extract_dir/cosmovisor" "$staged_private" ||
+           ! ln -T "$staged_private" "$COSMOVISOR_BIN"; then
+            rm -f -- "$staged_private"
+            echo "Refusing to replace a concurrently created Cosmovisor path."
+            exit 1
+        fi
+        rm -f -- "$staged_private"
+    fi
     "$COSMOVISOR_BIN" --help >/dev/null
 }
 
-install_go_toolchain
 install_cosmovisor
 
 STAGED_BINARY="$WORKDIR/limonatad"
@@ -269,6 +331,7 @@ build_pinned_source() {
 }
 
 if [[ "$INSTALL_METHOD" =~ ^[Ss]$ ]]; then
+    install_go_toolchain
     build_pinned_source
 else
     install_verified_prebuilt
@@ -283,6 +346,10 @@ fi
 
 # Put the operator-facing binary in ~/go/bin, matching the Valley of Story UX.
 # After Cosmovisor initialization this path becomes a symlink to current/bin.
+# Recheck after downloads/builds, before creating the operator binary.
+if ! guard_fresh_limonata_install; then
+    exit 1
+fi
 install -m 0755 "$STAGED_BINARY" "$LIMONATA_BIN"
 
 {
