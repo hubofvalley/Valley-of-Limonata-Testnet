@@ -13,6 +13,10 @@ LIMONATA_REST_TIMEOUT=${LIMONATA_REST_TIMEOUT:-10}
 readonly GRPC_ADVISORY_ID="CVE-2026-84304"
 readonly GRPC_ADVISORY_URL="https://github.com/grpc/grpc-go/security/advisories/GHSA-vp52-pcj8-j9qc"
 readonly GRPC_FIRST_FIXED_VERSION="1.83.1"
+readonly ZSTD_ADVISORY_ID="GHSA-fpmh-frq8-7rj8"
+readonly ZSTD_ADVISORY_URL="https://github.com/klauspost/compress/security/advisories/GHSA-fpmh-frq8-7rj8"
+readonly ZSTD_LAST_AFFECTED_VERSION="1.20.1"
+readonly ZSTD_FIRST_FIXED_VERSION="1.20.2"
 readonly COSMOS_SDK_REVIEWED_VERSION="0.54.3"
 readonly COSMOS_SDK_SECURITY_PATCH_VERSION="0.54.4"
 readonly COSMOS_SDK_SECURITY_PATCH_URL="https://github.com/cosmos/cosmos-sdk/releases/tag/v0.54.4"
@@ -40,7 +44,9 @@ Read-only preflight for the active Limonata binary and local app.toml. It checks
 an exact reviewed Limonata release/commit against a published critical Cosmos EVM
 StateDB advisory, checks the embedded Cosmos SDK security patch line, checks
 embedded gRPC-Go build metadata against the published CVE-2026-84304 boundary,
-and correlates listener-related findings with local configuration. It also
+checks the embedded klauspost/compress version against the published zstd
+decoder advisory (without assuming untrusted-input reachability), and correlates
+listener-related findings with local configuration. It also
 reports public EVM JSON-RPC/WS signing-surface configuration that deserves
 keyring review under Limonata upstream PR #13.
 
@@ -185,7 +191,10 @@ api_has_signing_namespace() {
 }
 
 grpc_version=""
+compress_version=""
+compress_replacement=""
 cosmos_sdk_version=""
+build_info=""
 release_version=""
 release_commit=""
 state_db_exact_match=false
@@ -194,6 +203,12 @@ if [ ! -x "$LIMONATA_BIN" ]; then
 else
     build_info=$("$GO_BIN" version -m "$LIMONATA_BIN" 2>/dev/null || true)
     grpc_version=$(awk '$1 == "dep" && $2 == "google.golang.org/grpc" { print $3; exit }' <<<"$build_info")
+    compress_version=$(awk '$1 == "dep" && $2 == "github.com/klauspost/compress" { print $3; exit }' <<<"$build_info")
+    compress_replacement=$(awk '
+        $1 == "dep" && $2 == "github.com/klauspost/compress" { found=1; next }
+        found && $1 == "=>" { print $0; exit }
+        found { exit }
+    ' <<<"$build_info")
     cosmos_sdk_version=$(awk '$1 == "dep" && $2 == "github.com/cosmos/cosmos-sdk" { print $3; exit }' <<<"$build_info")
     if [ -z "$build_info" ]; then
         unknown "Could not read Go build metadata from the active binary."
@@ -205,6 +220,9 @@ else
     if [ -n "$cosmos_sdk_version" ]; then
         info "Embedded github.com/cosmos/cosmos-sdk version: $cosmos_sdk_version"
     fi
+    if [ -n "$compress_version" ]; then
+        info "Embedded github.com/klauspost/compress version: $compress_version"
+    fi
 
     release_output=$("$LIMONATA_BIN" version --long 2>/dev/null || "$LIMONATA_BIN" version 2>/dev/null || true)
     release_version=$(version_long_value "$release_output" version)
@@ -214,6 +232,31 @@ else
     else
         info "Limonata release version: $release_version"
     fi
+fi
+
+if [ -n "$compress_replacement" ]; then
+    unknown "Embedded github.com/klauspost/compress has a replacement module in Go build metadata; refusing to classify its original version against $ZSTD_ADVISORY_ID."
+elif [ -n "$compress_version" ]; then
+    set +e
+    semver_le "$compress_version" "$ZSTD_LAST_AFFECTED_VERSION"
+    zstd_semver_status=$?
+    set -e
+    case "$zstd_semver_status" in
+        0)
+            warn "Embedded github.com/klauspost/compress $compress_version is in the published affected range for $ZSTD_ADVISORY_ID (fixed in v$ZSTD_FIRST_FIXED_VERSION)."
+            info "The advisory describes a panic on crafted untrusted zstd frames; this version finding does not establish that a Limonata runtime path accepts such frames."
+            info "Wait for an authenticated coordinated Limonata release; do not rebuild a validator with an unofficial dependency swap."
+            info "Advisory: $ZSTD_ADVISORY_URL"
+            ;;
+        1)
+            pass "Embedded github.com/klauspost/compress $compress_version is outside the published $ZSTD_ADVISORY_ID affected version range."
+            ;;
+        *)
+            unknown "Could not compare embedded github.com/klauspost/compress version '$compress_version' with $ZSTD_ADVISORY_ID."
+            ;;
+    esac
+elif [ -n "$build_info" ]; then
+    unknown "Embedded build metadata did not expose github.com/klauspost/compress; cannot establish $ZSTD_ADVISORY_ID version applicability."
 fi
 
 if [ -n "$release_version" ]; then

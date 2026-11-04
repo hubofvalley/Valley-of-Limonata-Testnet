@@ -95,6 +95,25 @@ validator dependency independently of a coordinated Limonata release.
   is loopback-only, so operators can track the release risk without treating a
   local-only listener as proven remote exposure.
 
+### Zstd decoder dependency version
+
+The reviewed Limonata v0.3.6 `go.mod` pins the indirect module
+`github.com/klauspost/compress v1.18.6`. The upstream high-severity
+[`GHSA-fpmh-frq8-7rj8`](https://github.com/klauspost/compress/security/advisories/GHSA-fpmh-frq8-7rj8)
+describes a panic when decoding specially crafted, untrusted zstd frames. The
+published affected range is through v1.20.1, with v1.20.2 as the first fixed
+version. An upstream Limonata PR proposing v1.18.7 does not resolve this
+advisory's version boundary.
+
+The checker uses the **active binary's** `go version -m` dependency metadata,
+not just `go.mod`, to classify this one version boundary. An affected embedded
+version produces `WARN`; patched versions produce `PASS` for this advisory only;
+missing, unparseable, or replaced module metadata produces `UNKNOWN`. The presence of
+an affected library does **not** establish that the Limonata runtime actually
+accepts attacker-controlled zstd frames. This preflight does not try to trigger
+the panic, inspect confidential inputs, or recommend an unofficial validator
+rebuild. Actual runtime reachability remains a separate upstream-review task.
+
 ### EVM JSON-RPC signing surface
 
 The checker inspects `[json-rpc]` HTTP/WS listeners. A non-loopback listener with

@@ -42,6 +42,12 @@ fi
 if [ "${FAKE_NO_COSMOS_SDK_DEP:-0}" != "1" ]; then
     printf '\tdep\tgithub.com/cosmos/cosmos-sdk\t%s\n' "${FAKE_COSMOS_SDK_VERSION:-v0.54.3}"
 fi
+if [ "${FAKE_NO_COMPRESS_DEP:-0}" != "1" ]; then
+    printf '\tdep\tgithub.com/klauspost/compress\t%s\n' "${FAKE_COMPRESS_VERSION:-v1.18.6}"
+    if [ "${FAKE_COMPRESS_REPLACEMENT:-0}" = "1" ]; then
+        printf '\t=>\tgithub.com/klauspost/compress\tv1.20.2\n'
+    fi
+fi
 GO
 chmod +x "$tmp/bin/go"
 
@@ -114,6 +120,48 @@ fi
 grep -Fq '[WARN] google.golang.org/grpc v1.80.0 is within the affected range for CVE-2026-84304' "$tmp/loopback.out" || fail "missing affected dependency warning"
 grep -Fq '[PASS] gRPC is configured loopback-only at localhost:9090.' "$tmp/loopback.out" || fail "loopback gRPC was not accepted"
 grep -Fq '[PASS] EVM JSON-RPC HTTP/WS listeners are configured loopback-only.' "$tmp/loopback.out" || fail "loopback JSON-RPC was not accepted"
+grep -Fq '[WARN] Embedded github.com/klauspost/compress v1.18.6 is in the published affected range for GHSA-fpmh-frq8-7rj8' "$tmp/loopback.out" || fail "known affected Limonata dependency must warn"
+grep -Fq 'does not establish that a Limonata runtime path accepts such frames' "$tmp/loopback.out" || fail "missing zstd reachability qualification"
+
+# The advisory is version-based, not proof of Limonata-specific exploitability.
+# Boundary, patched, unknown-version and missing-metadata cases must remain
+# deterministic without decoding any untrusted input or running real binaries.
+if ! run_case "$tmp/zstd-last-affected.out" env FAKE_GRPC_VERSION=v1.83.1 FAKE_COMPRESS_VERSION=v1.20.1; then
+    fail "last affected zstd library version should warn, not claim exploitation"
+fi
+grep -Fq '[WARN] Embedded github.com/klauspost/compress v1.20.1 is in the published affected range' "$tmp/zstd-last-affected.out" || fail "missing last affected zstd boundary"
+
+if ! run_case "$tmp/zstd-fixed.out" env FAKE_GRPC_VERSION=v1.83.1 FAKE_COMPRESS_VERSION=v1.20.2; then
+    fail "first patched zstd library version should pass the advisory boundary"
+fi
+grep -Fq '[PASS] Embedded github.com/klauspost/compress v1.20.2 is outside the published GHSA-fpmh-frq8-7rj8 affected version range.' "$tmp/zstd-fixed.out" || fail "first patched zstd boundary not recognized"
+if grep -Fq '[WARN] Embedded github.com/klauspost/compress v1.20.2' "$tmp/zstd-fixed.out"; then
+    fail "patched zstd dependency must not be reported as affected"
+fi
+
+set +e
+run_case "$tmp/zstd-missing.out" env FAKE_GRPC_VERSION=v1.83.1 FAKE_NO_COMPRESS_DEP=1
+status=$?
+set -e
+[ "$status" -eq 2 ] || fail "missing embedded compression dependency must be UNKNOWN, not PASS"
+grep -Fq '[UNKNOWN] Embedded build metadata did not expose github.com/klauspost/compress' "$tmp/zstd-missing.out" || fail "missing compression metadata must be reported"
+
+set +e
+run_case "$tmp/zstd-malformed.out" env FAKE_GRPC_VERSION=v1.83.1 FAKE_COMPRESS_VERSION=vunknown
+status=$?
+set -e
+[ "$status" -eq 2 ] || fail "unparseable compression version must be UNKNOWN"
+grep -Fq "[UNKNOWN] Could not compare embedded github.com/klauspost/compress version 'vunknown'" "$tmp/zstd-malformed.out" || fail "malformed compression version not reported"
+
+set +e
+run_case "$tmp/zstd-replaced.out" env FAKE_GRPC_VERSION=v1.83.1 FAKE_COMPRESS_REPLACEMENT=1
+status=$?
+set -e
+[ "$status" -eq 2 ] || fail "module replacement must be UNKNOWN rather than classify the replaced original version"
+grep -Fq '[UNKNOWN] Embedded github.com/klauspost/compress has a replacement module' "$tmp/zstd-replaced.out" || fail "replacement module metadata not reported"
+if grep -Fq '[WARN] Embedded github.com/klauspost/compress' "$tmp/zstd-replaced.out"; then
+    fail "replaced module must not use the original dependency version for vulnerability classification"
+fi
 
 write_config true '0.0.0.0:9090' true '127.0.0.1:8545' '127.0.0.1:8546' 'eth,net,web3'
 set +e
