@@ -191,6 +191,7 @@ api_has_signing_namespace() {
 }
 
 grpc_version=""
+grpc_replacement=""
 compress_version=""
 compress_replacement=""
 cosmos_sdk_version=""
@@ -203,6 +204,11 @@ if [ ! -x "$LIMONATA_BIN" ]; then
 else
     build_info=$("$GO_BIN" version -m "$LIMONATA_BIN" 2>/dev/null || true)
     grpc_version=$(awk '$1 == "dep" && $2 == "google.golang.org/grpc" { print $3; exit }' <<<"$build_info")
+    grpc_replacement=$(awk '
+        $1 == "dep" && $2 == "google.golang.org/grpc" { found=1; next }
+        found && $1 == "=>" { print $0; exit }
+        found { exit }
+    ' <<<"$build_info")
     compress_version=$(awk '$1 == "dep" && $2 == "github.com/klauspost/compress" { print $3; exit }' <<<"$build_info")
     compress_replacement=$(awk '
         $1 == "dep" && $2 == "github.com/klauspost/compress" { found=1; next }
@@ -385,7 +391,9 @@ else
     jsonrpc_api=$(toml_value "$app_toml" json-rpc api)
 fi
 
-if [ -n "$grpc_version" ]; then
+if [ -n "$grpc_replacement" ]; then
+    unknown "Embedded google.golang.org/grpc has a replacement module in Go build metadata; refusing to classify its original version against $GRPC_ADVISORY_ID."
+elif [ -n "$grpc_version" ]; then
     normalized_grpc_version=${grpc_version#v}
     set +e
     semver_le "$normalized_grpc_version" "1.83.0"

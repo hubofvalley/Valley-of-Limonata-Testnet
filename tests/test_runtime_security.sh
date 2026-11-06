@@ -38,6 +38,9 @@ fi
 printf '%s: go1.26.5\n' "${3:-binary}"
 if [ "${FAKE_NO_GRPC_DEP:-0}" != "1" ]; then
     printf '\tdep\tgoogle.golang.org/grpc\t%s\n' "${FAKE_GRPC_VERSION:-v1.80.0}"
+    if [ "${FAKE_GRPC_REPLACEMENT:-0}" = "1" ]; then
+        printf '\t=>\tgoogle.golang.org/grpc\t%s\n' "${FAKE_GRPC_REPLACEMENT_VERSION:-v1.80.0}"
+    fi
 fi
 if [ "${FAKE_NO_COSMOS_SDK_DEP:-0}" != "1" ]; then
     printf '\tdep\tgithub.com/cosmos/cosmos-sdk\t%s\n' "${FAKE_COSMOS_SDK_VERSION:-v0.54.3}"
@@ -184,6 +187,30 @@ if ! run_case "$tmp/patched.out" env FAKE_GRPC_VERSION=v1.83.1; then
     fail "patched gRPC version should not fail the known gRPC advisory gate"
 fi
 grep -Fq '[PASS] google.golang.org/grpc v1.83.1 is newer than the published CVE-2026-84304 affected range.' "$tmp/patched.out" || fail "patched gRPC version not recognized"
+
+# The dep line is the original module requirement; an immediately following
+# => line indicates replacement code. Neither original version is safe to
+# classify without inspecting the replacement's source and provenance.
+write_config true '0.0.0.0:9090' true '127.0.0.1:8545' '127.0.0.1:8546' 'eth,net,web3'
+set +e
+run_case "$tmp/grpc-replaced-old.out" env FAKE_GRPC_VERSION=v1.83.1 FAKE_GRPC_REPLACEMENT=1 FAKE_GRPC_REPLACEMENT_VERSION=v1.80.0
+status=$?
+set -e
+[ "$status" -eq 2 ] || fail "a patched gRPC dep replaced by older code must be UNKNOWN, never PASS"
+grep -Fq '[UNKNOWN] Embedded google.golang.org/grpc has a replacement module' "$tmp/grpc-replaced-old.out" || fail "missing gRPC replacement warning"
+if grep -Fq '[PASS] google.golang.org/grpc v1.83.1' "$tmp/grpc-replaced-old.out"; then
+    fail "replaced gRPC module must not be reported patched from the original dep version"
+fi
+
+set +e
+run_case "$tmp/grpc-replaced-new.out" env FAKE_GRPC_VERSION=v1.80.0 FAKE_GRPC_REPLACEMENT=1 FAKE_GRPC_REPLACEMENT_VERSION=v1.83.1
+status=$?
+set -e
+[ "$status" -eq 2 ] || fail "an affected gRPC dep replaced by other code must be UNKNOWN, not the original version verdict"
+grep -Fq '[UNKNOWN] Embedded google.golang.org/grpc has a replacement module' "$tmp/grpc-replaced-new.out" || fail "missing gRPC replacement UNKNOWN"
+if grep -Fq '[FAIL] Affected gRPC-Go server' "$tmp/grpc-replaced-new.out"; then
+    fail "replaced gRPC module must not be classified from the original version"
+fi
 
 write_config true 'localhost:9090' true '0.0.0.0:8545' '0.0.0.0:8546' 'eth,net,web3'
 if ! run_case "$tmp/public-jsonrpc.out" env FAKE_GRPC_VERSION=v1.83.1; then

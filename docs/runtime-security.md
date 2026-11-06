@@ -86,6 +86,8 @@ validator dependency independently of a coordinated Limonata release.
 
 - reads `google.golang.org/grpc` from the active Go binary with
   `go version -m` rather than assuming the dependency from a release name;
+- reports `UNKNOWN` when Go build metadata shows a module replacement (`=>`),
+  because the original `dep` version does not prove which gRPC code was built;
 - evaluates that embedded version against `CVE-2026-84304 /
   GHSA-vp52-pcj8-j9qc`, whose published affected range is gRPC-Go `<=1.83.0`
   and whose first fixed version is `1.83.1`;
