@@ -254,4 +254,18 @@ Store every mnemonic offline. In `validator.json`, use the public key returned b
 `comet show-validator`, express self-bond in aLIMO, and keep
 `min-self-delegation` at `"1"` unless upstream policy changes.
 
+## Genesis provenance during fresh installation
+
+The installer downloads canonical testnet genesis into a temporary candidate
+file and checks the pinned SHA-256 and Cosmos chain ID before copying it to the
+node home and running the binary's `genesis validate-genesis` command. The
+reviewed digest is recorded in `VERSIONS.json`. A digest mismatch, unavailable
+candidate, malformed JSON or unexpected chain causes a fail-closed exit.
+Genesis is retrieved from a mutable upstream URL, so maintainers must review
+and independently verify a changed genesis before updating the pin.
+
+If installation fails after initializing the node home, partial local files may
+remain. The fresh-install guard intentionally refuses reruns; do not delete or
+reset validator data automatically. Assess any recovery manually.
+
 last updated by: John

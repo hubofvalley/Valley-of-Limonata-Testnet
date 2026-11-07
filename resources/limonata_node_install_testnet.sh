@@ -19,6 +19,8 @@ readonly LIMONATA_ARTIFACT_SHA256="39ff376963498de120604c273d50751afc005ebeec9cb
 readonly LIMONATA_SIGNING_KEY_FINGERPRINT="A45380198F390AF69126AE12E4ECEC477C1735FB"
 readonly LIMONATA_REPO="https://github.com/Limonata-Blockchain/limonata.git"
 readonly LIMONATA_RELEASE_BASE="https://github.com/Limonata-Blockchain/limonata/releases/download/${LIMONATA_RELEASE}"
+readonly LIMONATA_GENESIS_URL="https://limonata.xyz/genesis.json"
+readonly LIMONATA_GENESIS_SHA256="bb76a6d8abbb1bdeaa41d92811066b16bd6a48f58f7136e3fcb71226b6af4569"
 readonly COSMOVISOR_VERSION="v1.7.3"
 readonly COSMOVISOR_ARTIFACT="cosmovisor-v1.7.3-linux-amd64.tar.gz"
 readonly COSMOVISOR_ARTIFACT_SHA256="3df6ef38cf976b00d226f391dc6866b8dc4040fc2f1b4a780d248f6e1cc9332e"
@@ -374,9 +376,41 @@ if [[ "$SETUP_UFW" =~ ^[Yy]$ ]]; then
     sudo ufw status verbose
 fi
 
-# Initialize using the pinned v0.3.6 binary, then fetch and validate live genesis.
+# A checksum mismatch, unavailable file, malformed JSON, or wrong chain must
+# block the candidate before it can replace the initialized genesis.
+verify_genesis_candidate() {
+    local candidate=$1 actual_sha chain_id
+    if ! actual_sha=$(sha256sum "$candidate" | awk '{print $1}'); then
+        echo "Could not hash genesis candidate. Refusing installation." >&2
+        return 1
+    fi
+    if [ "$actual_sha" != "$LIMONATA_GENESIS_SHA256" ]; then
+        echo "Pinned genesis SHA256 mismatch. Refusing installation." >&2
+        echo "Expected: $LIMONATA_GENESIS_SHA256" >&2
+        echo "Observed: $actual_sha" >&2
+        return 1
+    fi
+    if ! chain_id=$(jq -r '.chain_id // empty' "$candidate"); then
+        echo "Malformed genesis JSON. Refusing installation." >&2
+        return 1
+    fi
+    if [ "$chain_id" != "limonata_10777-1" ]; then
+        echo "Genesis chain-id mismatch. Refusing installation." >&2
+        echo "Observed: ${chain_id:-<missing>}" >&2
+        return 1
+    fi
+}
+
+# Initialize using the pinned v0.3.6 binary, then authenticate the canonical
+# genesis bytes before installing them into the node home. An otherwise valid
+# JSON document from the mutable URL is not sufficient chain provenance.
 "$LIMONATA_BIN" --home "$LIMONATA_HOME" init "$LIMONATA_MONIKER" --chain-id limonata_10777-1
-curl -fsSL https://limonata.xyz/genesis.json -o "$LIMONATA_HOME/config/genesis.json"
+GENESIS_CANDIDATE="$WORKDIR/limonata-genesis.json"
+curl -fsSL "$LIMONATA_GENESIS_URL" -o "$GENESIS_CANDIDATE"
+if ! verify_genesis_candidate "$GENESIS_CANDIDATE"; then
+    exit 1
+fi
+install -m 0644 "$GENESIS_CANDIDATE" "$LIMONATA_HOME/config/genesis.json"
 "$LIMONATA_BIN" --home "$LIMONATA_HOME" genesis validate-genesis
 
 CFG="$LIMONATA_HOME/config/config.toml"

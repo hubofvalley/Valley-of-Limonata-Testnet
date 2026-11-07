@@ -85,6 +85,7 @@
   },
   "network_facts": {
     "genesis_url": "https://limonata.xyz/genesis.json",
+    "genesis_sha256": "bb76a6d8abbb1bdeaa41d92811066b16bd6a48f58f7136e3fcb71226b6af4569",
     "persistent_peers": "4b154368aab24cb5b31c927efd50c73d0f4f9799@142.127.103.79:26656",
     "faucet_url": "https://faucet.limonata.xyz",
     "public_rpc": "https://rpc.limonata.xyz",
