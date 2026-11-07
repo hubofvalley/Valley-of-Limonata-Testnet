@@ -52,8 +52,8 @@ SHA-256 above before installation.
 ## Build from source
 
 The tagged source is pinned to the same full commit. The upstream v0.3.6
-`go.mod` declares Go `1.25.9`; Valley currently installs Go `1.26.5` for its
-source-build/Cosmovisor toolchain.
+`go.mod` declares Go `1.25.9`; Valley installs the pinned Go `1.26.8` toolchain
+only when the operator selects the source-build path.
 
 ```bash
 git clone --depth 1 --branch limonata-v0.3.6 \
@@ -80,7 +80,9 @@ $HOME/go/bin/limonatad --home "$LIMONATA_HOME" genesis validate-genesis
 ## Cosmovisor layout
 
 New Valley deployments run `limonatad` through Cosmovisor from the start. The
-installer pins Cosmovisor `v1.7.1`, disables binary auto-downloads, and creates:
+installer pins the official Cosmovisor `v1.7.3` Linux AMD64 release artifact
+by SHA-256 and disables binary auto-downloads. It creates the following
+per-node layout:
 
 ```text
 $HOME/.limonatad/cosmovisor/
@@ -89,6 +91,12 @@ $HOME/.limonatad/cosmovisor/
   upgrades/
   backup/
 ```
+
+The verified Cosmovisor executable is installed in the Limonata-private path
+`$HOME/.local/libexec/valley-of-limonata/cosmovisor`, rather than replacing
+`/usr/local/bin/cosmovisor` (which may be used by other chains). An existing
+private executable is reused only when it is byte-identical to the verified
+release artifact; other files and symlinks fail closed.
 
 The user-facing command remains:
 
@@ -146,22 +154,52 @@ reachable.
 
 ## Optional state sync
 
-State sync uses the CometBFT RPC endpoint, not the EVM JSON-RPC endpoint.
+State sync uses CometBFT RPC endpoints, not the EVM JSON-RPC endpoint. Baconvalley
+requires two distinct RPC endpoints to agree on the same trusted commit before
+enabling state sync. The second endpoint is an independent witness, not a binary
+or software trust source.
+
+The manual snippet below illustrates the trusted-hash calculation only; it is
+**not** a complete safety preflight and must not be treated as approval to
+restart or restore an existing validator. The Valley installer additionally
+checks both latest block timestamps against a 600-second age limit and a
+60-second future-clock tolerance. Missing, malformed, or stale RPC evidence
+fails closed; use genesis sync if the independent sources are unavailable.
+
+On 2026-10-30, the previous default CometBFT RPC
+`https://cosmos-rpc.limonata.xyz` returned HTTP 502, while the POSTHUMAN and
+ANODE endpoints returned matching chain identity, current block hashes, and a
+historical trusted commit. Valley uses these two reviewed third-party endpoints
+as defaults, not as a guarantee of future availability or independence. The
+installer must verify both at execution time; no automatic unsafe fallback.
 
 ```bash
 CFG="$HOME/.limonatad/config/config.toml"
-RPC="https://cosmos-rpc.limonata.xyz"
-LATEST=$(curl -fsS "$RPC/block" | jq -r '.result.block.header.height')
+PRIMARY_RPC="https://rpc-limonata.posthuman.digital"
+WITNESS_RPC="https://limonata.rpc.t.anode.team"
+
+PRIMARY_HEIGHT=$(curl -fsS "$PRIMARY_RPC/status" | jq -r '.result.sync_info.latest_block_height')
+WITNESS_HEIGHT=$(curl -fsS "$WITNESS_RPC/status" | jq -r '.result.sync_info.latest_block_height')
+LATEST=$(( PRIMARY_HEIGHT < WITNESS_HEIGHT ? PRIMARY_HEIGHT : WITNESS_HEIGHT ))
 TRUST=$(( (LATEST - 2000) / 1000 * 1000 ))
-HASH=$(curl -fsS "$RPC/commit?height=$TRUST" | jq -r '.result.signed_header.commit.block_id.hash')
+PRIMARY_HASH=$(curl -fsS "$PRIMARY_RPC/commit?height=$TRUST" | jq -r '.result.signed_header.commit.block_id.hash')
+WITNESS_HASH=$(curl -fsS "$WITNESS_RPC/commit?height=$TRUST" | jq -r '.result.signed_header.commit.block_id.hash')
+[ "$PRIMARY_HASH" = "$WITNESS_HASH" ] || { echo "RPC disagreement; refuse state sync" >&2; exit 1; }
 
 sed -i "/^\[statesync\]/,/^\[/ { \
   s/^enable *=.*/enable = true/; \
-  s#^rpc_servers *=.*#rpc_servers = \"$RPC,$RPC\"#; \
+  s#^rpc_servers *=.*#rpc_servers = \"$PRIMARY_RPC,$WITNESS_RPC\"#; \
   s/^trust_height *=.*/trust_height = $TRUST/; \
-  s/^trust_hash *=.*/trust_hash = \"$HASH\"/; \
+  s/^trust_hash *=.*/trust_hash = \"$PRIMARY_HASH\"/; \
   s/^trust_period *=.*/trust_period = \"168h0m0s\"/ }" "$CFG"
 ```
+
+The installer additionally verifies both endpoints report
+`limonata_10777-1`, are not catching up, return the requested commit height,
+have fresh valid latest-block timestamps, and return a valid 64-hex commit hash.
+Advanced operators can override the two
+RPC URLs for the installer with `LIMONATA_STATE_SYNC_PRIMARY_RPC` and
+`LIMONATA_STATE_SYNC_WITNESS_RPC`; the values must remain distinct.
 
 Choosing state sync means the node starts from a trusted state snapshot rather
 than executing every block from genesis. Disable state sync if you explicitly
@@ -215,5 +253,19 @@ $HOME/go/bin/limonatad --home "$HOME/.limonatad" query staking validator <cosmos
 Store every mnemonic offline. In `validator.json`, use the public key returned by
 `comet show-validator`, express self-bond in aLIMO, and keep
 `min-self-delegation` at `"1"` unless upstream policy changes.
+
+## Genesis provenance during fresh installation
+
+The installer downloads canonical testnet genesis into a temporary candidate
+file and checks the pinned SHA-256 and Cosmos chain ID before copying it to the
+node home and running the binary's `genesis validate-genesis` command. The
+reviewed digest is recorded in `VERSIONS.json`. A digest mismatch, unavailable
+candidate, malformed JSON or unexpected chain causes a fail-closed exit.
+Genesis is retrieved from a mutable upstream URL, so maintainers must review
+and independently verify a changed genesis before updating the pin.
+
+If installation fails after initializing the node home, partial local files may
+remain. The fresh-install guard intentionally refuses reruns; do not delete or
+reset validator data automatically. Assess any recovery manually.
 
 last updated by: John

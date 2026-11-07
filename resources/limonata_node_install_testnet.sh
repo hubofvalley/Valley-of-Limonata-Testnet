@@ -19,11 +19,18 @@ readonly LIMONATA_ARTIFACT_SHA256="39ff376963498de120604c273d50751afc005ebeec9cb
 readonly LIMONATA_SIGNING_KEY_FINGERPRINT="A45380198F390AF69126AE12E4ECEC477C1735FB"
 readonly LIMONATA_REPO="https://github.com/Limonata-Blockchain/limonata.git"
 readonly LIMONATA_RELEASE_BASE="https://github.com/Limonata-Blockchain/limonata/releases/download/${LIMONATA_RELEASE}"
-readonly COSMOVISOR_VERSION="v1.7.1"
-readonly GO_VERSION="1.26.5"
-readonly GO_LINUX_AMD64_SHA256="5c2c3b16caefa1d968a94c1daca04a7ca301a496d9b086e17ad77bb81393f053"
+readonly LIMONATA_GENESIS_URL="https://limonata.xyz/genesis.json"
+readonly LIMONATA_GENESIS_SHA256="bb76a6d8abbb1bdeaa41d92811066b16bd6a48f58f7136e3fcb71226b6af4569"
+readonly COSMOVISOR_VERSION="v1.7.3"
+readonly COSMOVISOR_ARTIFACT="cosmovisor-v1.7.3-linux-amd64.tar.gz"
+readonly COSMOVISOR_ARTIFACT_SHA256="3df6ef38cf976b00d226f391dc6866b8dc4040fc2f1b4a780d248f6e1cc9332e"
+readonly COSMOVISOR_RELEASE_BASE="https://github.com/cosmos/cosmos-sdk/releases/download/cosmovisor/${COSMOVISOR_VERSION}"
+readonly GO_VERSION="1.26.8"
+readonly GO_LINUX_AMD64_SHA256="d0f743b33e8d8945e6b1f432edd15785c70507121d6e2a723b21285eddf8b57b"
 readonly GO_ROOT="$HOME/.local/go-${GO_VERSION}"
-readonly COSMOVISOR_BIN="/usr/local/bin/cosmovisor"
+# Keep the process manager private to Limonata. A global Cosmovisor binary may
+# be used by other Cosmos validators on this host and must never be overwritten.
+readonly COSMOVISOR_BIN="$HOME/.local/libexec/valley-of-limonata/cosmovisor"
 readonly LIMONATA_BIN_DIR="$HOME/go/bin"
 readonly LIMONATA_BIN="$LIMONATA_BIN_DIR/limonatad"
 
@@ -132,26 +139,50 @@ fi
 
 echo "Using Service Name: ${LIMONATA_SERVICE_NAME}"
 
-if { [ -d "$HOME/.limonatad" ] || [ -f "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service" ] || command -v limonatad >/dev/null 2>&1; } \
-    && [ "${LIMONATA_REDEPLOY_CONFIRMED:-0}" != "1" ]; then
-    echo "WARNING: An existing Limonata installation was detected."
-    echo "Re-deployment permanently deletes $HOME/.limonatad, including local block data and priv_validator_key.json."
-    echo "Back up validator keys and store the operator mnemonic offline before continuing."
-    read -r -p "Type REDEPLOY to confirm permanent deletion: " REDEPLOY_CONFIRM
-    if [ "$REDEPLOY_CONFIRM" != "REDEPLOY" ]; then
-        echo "Re-deployment cancelled. No existing node data was changed."
-        exit 0
-    fi
-fi
+# Fresh installation only. Neither an operator prompt nor an environment variable
+# may authorize replacing node data or an existing validator signing watermark.
+guard_fresh_limonata_install() {
+    local unit="$LIMONATA_SERVICE_NAME.service"
+    local target load_state
 
-sudo systemctl daemon-reload
-sudo systemctl stop "$LIMONATA_SERVICE_NAME" 2>/dev/null || true
-sudo systemctl disable "$LIMONATA_SERVICE_NAME" 2>/dev/null || true
-sudo rm -f "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service" 2>/dev/null || true
-sudo rm -f /usr/local/bin/limonatad 2>/dev/null || true
-rm -f "$LIMONATA_BIN" 2>/dev/null || true
-sudo rm -rf "$HOME/.limonatad" 2>/dev/null || true
-sed -i "/LIMONATA_/d" "$HOME/.bash_profile" 2>/dev/null || true
+    for target in \
+        "$HOME/.limonatad" \
+        "$LIMONATA_BIN" \
+        "/usr/local/bin/limonatad" \
+        "/etc/systemd/system/$unit" \
+        "/run/systemd/system/$unit" \
+        "/lib/systemd/system/$unit" \
+        "/usr/lib/systemd/system/$unit" \
+        "/etc/systemd/system/multi-user.target.wants/$unit"; do
+        if [ -e "$target" ] || [ -L "$target" ]; then
+            echo "REFUSED: existing node, binary, or unit path detected: $target" >&2
+            echo "This installer supports fresh installations only; use a separately reviewed recovery procedure." >&2
+            return 1
+        fi
+    done
+
+    if command -v limonatad >/dev/null 2>&1; then
+        echo "REFUSED: existing limonatad executable found in PATH." >&2
+        return 1
+    fi
+
+    if ! command -v systemctl >/dev/null 2>&1; then
+        echo "REFUSED: cannot inspect systemd unit state." >&2
+        return 1
+    fi
+    if ! load_state=$(systemctl show --no-pager --property=LoadState --value "$unit" 2>/dev/null); then
+        echo "REFUSED: systemd unit state could not be verified." >&2
+        return 1
+    fi
+    if [ "$load_state" != "not-found" ]; then
+        echo "REFUSED: systemd unit state is not fresh: $load_state" >&2
+        return 1
+    fi
+}
+
+if ! guard_fresh_limonata_install; then
+    exit 1
+fi
 
 sudo apt update -y
 sudo apt install -y curl git jq bc build-essential gcc unzip wget lz4 openssl gnupg ca-certificates
@@ -184,14 +215,47 @@ install_go_toolchain() {
 }
 
 install_cosmovisor() {
-    echo "Installing pinned Cosmovisor ${COSMOVISOR_VERSION} from the verified Go module..."
-    mkdir -p "$HOME/.local/bin"
-    GOBIN="$HOME/.local/bin" "$GO_ROOT/bin/go" install "cosmossdk.io/tools/cosmovisor/cmd/cosmovisor@${COSMOVISOR_VERSION}"
-    sudo install -m 0755 "$HOME/.local/bin/cosmovisor" "$COSMOVISOR_BIN"
+    local archive="$WORKDIR/${COSMOVISOR_ARTIFACT}"
+    local extract_dir="$WORKDIR/cosmovisor-release"
+    local binary_dir staged_private
+
+    echo "Installing pinned Cosmovisor ${COSMOVISOR_VERSION} from the verified release artifact..."
+    curl -fsSL "${COSMOVISOR_RELEASE_BASE}/${COSMOVISOR_ARTIFACT}" -o "$archive"
+    echo "${COSMOVISOR_ARTIFACT_SHA256}  ${archive}" | sha256sum -c -
+    mkdir -p "$extract_dir"
+    tar -xzf "$archive" -C "$extract_dir"
+    if [ ! -f "$extract_dir/cosmovisor" ]; then
+        echo "Verified Cosmovisor archive does not contain the expected binary."
+        exit 1
+    fi
+    binary_dir=$(dirname -- "$COSMOVISOR_BIN")
+    mkdir -p "$binary_dir"
+    if [ -L "$COSMOVISOR_BIN" ]; then
+        echo "Refusing an existing Cosmovisor symlink in the Limonata-private path."
+        exit 1
+    fi
+    if [ -e "$COSMOVISOR_BIN" ]; then
+        if [ ! -f "$COSMOVISOR_BIN" ] || [ ! -x "$COSMOVISOR_BIN" ] ||
+           ! cmp -s "$extract_dir/cosmovisor" "$COSMOVISOR_BIN"; then
+            echo "Refusing to overwrite an unknown Limonata-private Cosmovisor binary."
+            exit 1
+        fi
+        echo "Reusing byte-identical pinned Cosmovisor from the Limonata-private path."
+    else
+        # Link an already-staged executable exclusively: ln -T fails if another
+        # process created the destination, rather than replacing its bytes.
+        staged_private=$(mktemp "$binary_dir/.cosmovisor.XXXXXXXX")
+        if ! install -m 0755 "$extract_dir/cosmovisor" "$staged_private" ||
+           ! ln -T "$staged_private" "$COSMOVISOR_BIN"; then
+            rm -f -- "$staged_private"
+            echo "Refusing to replace a concurrently created Cosmovisor path."
+            exit 1
+        fi
+        rm -f -- "$staged_private"
+    fi
     "$COSMOVISOR_BIN" --help >/dev/null
 }
 
-install_go_toolchain
 install_cosmovisor
 
 STAGED_BINARY="$WORKDIR/limonatad"
@@ -269,6 +333,7 @@ build_pinned_source() {
 }
 
 if [[ "$INSTALL_METHOD" =~ ^[Ss]$ ]]; then
+    install_go_toolchain
     build_pinned_source
 else
     install_verified_prebuilt
@@ -283,6 +348,10 @@ fi
 
 # Put the operator-facing binary in ~/go/bin, matching the Valley of Story UX.
 # After Cosmovisor initialization this path becomes a symlink to current/bin.
+# Recheck after downloads/builds, before creating the operator binary.
+if ! guard_fresh_limonata_install; then
+    exit 1
+fi
 install -m 0755 "$STAGED_BINARY" "$LIMONATA_BIN"
 
 {
@@ -307,9 +376,41 @@ if [[ "$SETUP_UFW" =~ ^[Yy]$ ]]; then
     sudo ufw status verbose
 fi
 
-# Initialize using the pinned v0.3.6 binary, then fetch and validate live genesis.
+# A checksum mismatch, unavailable file, malformed JSON, or wrong chain must
+# block the candidate before it can replace the initialized genesis.
+verify_genesis_candidate() {
+    local candidate=$1 actual_sha chain_id
+    if ! actual_sha=$(sha256sum "$candidate" | awk '{print $1}'); then
+        echo "Could not hash genesis candidate. Refusing installation." >&2
+        return 1
+    fi
+    if [ "$actual_sha" != "$LIMONATA_GENESIS_SHA256" ]; then
+        echo "Pinned genesis SHA256 mismatch. Refusing installation." >&2
+        echo "Expected: $LIMONATA_GENESIS_SHA256" >&2
+        echo "Observed: $actual_sha" >&2
+        return 1
+    fi
+    if ! chain_id=$(jq -r '.chain_id // empty' "$candidate"); then
+        echo "Malformed genesis JSON. Refusing installation." >&2
+        return 1
+    fi
+    if [ "$chain_id" != "limonata_10777-1" ]; then
+        echo "Genesis chain-id mismatch. Refusing installation." >&2
+        echo "Observed: ${chain_id:-<missing>}" >&2
+        return 1
+    fi
+}
+
+# Initialize using the pinned v0.3.6 binary, then authenticate the canonical
+# genesis bytes before installing them into the node home. An otherwise valid
+# JSON document from the mutable URL is not sufficient chain provenance.
 "$LIMONATA_BIN" --home "$LIMONATA_HOME" init "$LIMONATA_MONIKER" --chain-id limonata_10777-1
-curl -fsSL https://limonata.xyz/genesis.json -o "$LIMONATA_HOME/config/genesis.json"
+GENESIS_CANDIDATE="$WORKDIR/limonata-genesis.json"
+curl -fsSL "$LIMONATA_GENESIS_URL" -o "$GENESIS_CANDIDATE"
+if ! verify_genesis_candidate "$GENESIS_CANDIDATE"; then
+    exit 1
+fi
+install -m 0644 "$GENESIS_CANDIDATE" "$LIMONATA_HOME/config/genesis.json"
 "$LIMONATA_BIN" --home "$LIMONATA_HOME" genesis validate-genesis
 
 CFG="$LIMONATA_HOME/config/config.toml"
@@ -340,36 +441,114 @@ s%address = \"localhost:9090\"%address = \"localhost:${LIMONATA_PORT}090\"%;
 s%address = \"127.0.0.1:8545\"%address = \"127.0.0.1:${LIMONATA_PORT}545\"%;
 s%ws-address = \"127.0.0.1:8546\"%ws-address = \"127.0.0.1:${LIMONATA_PORT}546\"%" "$APP"
 
-configure_state_sync() {
-    local rpc="https://cosmos-rpc.limonata.xyz" latest trust hash
+normalize_state_sync_rpc() {
+    local rpc=${1:-}
+    printf '%s' "${rpc%/}"
+}
 
-    if ! latest=$(curl -fsS --max-time 15 "$rpc/block" | jq -r '.result.block.header.height // empty'); then
-        return 1
-    fi
-    if ! [[ "$latest" =~ ^[0-9]+$ ]] || [ "$latest" -le 2000 ]; then
-        return 1
-    fi
+state_sync_now_epoch() {
+    date -u +%s
+}
 
-    trust=$(( (latest - 2000) / 1000 * 1000 ))
-    if ! hash=$(curl -fsS --max-time 15 "$rpc/commit?height=$trust" | jq -r '.result.signed_header.commit.block_id.hash // empty'); then
+fetch_state_sync_rpc_height() {
+    local rpc=$1 payload network height block_time block_epoch now_epoch catching_up
+    # Local operator-readiness policy, not a protocol/unbonding-time guarantee.
+    local max_age_seconds=600 max_future_skew_seconds=60
+
+    payload=$(curl -fsS --max-time 15 "$rpc/status") || return 1
+    network=$(jq -r '.result.node_info.network // empty' <<<"$payload")
+    height=$(jq -r '.result.sync_info.latest_block_height // empty' <<<"$payload")
+    block_time=$(jq -r '.result.sync_info.latest_block_time // empty' <<<"$payload")
+    catching_up=$(jq -r '.result.sync_info.catching_up' <<<"$payload")
+
+    [ "$network" = "limonata_10777-1" ] || return 1
+    [[ "$height" =~ ^[1-9][0-9]{0,15}$ ]] || return 1
+    if [ "${#height}" -eq 16 ] && [ "$height" -gt 9007199254740991 ]; then
         return 1
     fi
+    [ "$height" -gt 2000 ] || return 1
+    [ "$catching_up" = "false" ] || return 1
+    [[ "$block_time" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?(Z|[+-][0-9]{2}:[0-9]{2})$ ]] || return 1
+    block_epoch=$(date -u -d "$block_time" +%s 2>/dev/null) || return 1
+    now_epoch=$(state_sync_now_epoch) || return 1
+    [[ "$block_epoch" =~ ^[1-9][0-9]*$ && "$now_epoch" =~ ^[1-9][0-9]*$ ]] || return 1
+    [ "$block_epoch" -le "$((now_epoch + max_future_skew_seconds))" ] || return 1
+    [ "$((now_epoch - block_epoch))" -le "$max_age_seconds" ] || return 1
+
+    printf '%s' "$height"
+}
+
+fetch_state_sync_commit_hash() {
+    local rpc=$1 trust=$2 payload network returned_height hash
+
+    payload=$(curl -fsS --max-time 15 "$rpc/commit?height=$trust") || return 1
+    network=$(jq -r '.result.signed_header.header.chain_id // empty' <<<"$payload")
+    returned_height=$(jq -r '.result.signed_header.header.height // empty' <<<"$payload")
+    hash=$(jq -r '.result.signed_header.commit.block_id.hash // empty' <<<"$payload")
+
+    [ "$network" = "limonata_10777-1" ] || return 1
+    [ "$returned_height" = "$trust" ] || return 1
     [[ "$hash" =~ ^[0-9A-Fa-f]{64}$ ]] || return 1
-    grep -q '^\[statesync\]' "$CFG" || return 1
 
+    printf '%s' "${hash^^}"
+}
+
+configure_state_sync() {
+    local primary_rpc witness_rpc primary_latest witness_latest latest trust
+    local primary_hash witness_hash
+
+    primary_rpc=$(normalize_state_sync_rpc "${LIMONATA_STATE_SYNC_PRIMARY_RPC:-https://rpc-limonata.posthuman.digital}")
+    witness_rpc=$(normalize_state_sync_rpc "${LIMONATA_STATE_SYNC_WITNESS_RPC:-https://limonata.rpc.t.anode.team}")
+
+    if [ -z "$primary_rpc" ] || [ -z "$witness_rpc" ] || [ "$primary_rpc" = "$witness_rpc" ]; then
+        echo "State sync requires two distinct CometBFT RPC endpoints for independent verification." >&2
+        return 1
+    fi
+
+    if ! primary_latest=$(fetch_state_sync_rpc_height "$primary_rpc"); then
+        echo "Primary state-sync RPC is unavailable, stale, malformed, catching up, or on the wrong chain." >&2
+        return 1
+    fi
+    if ! witness_latest=$(fetch_state_sync_rpc_height "$witness_rpc"); then
+        echo "Witness state-sync RPC is unavailable, stale, malformed, catching up, or on the wrong chain." >&2
+        return 1
+    fi
+
+    if [ "$primary_latest" -lt "$witness_latest" ]; then
+        latest=$primary_latest
+    else
+        latest=$witness_latest
+    fi
+    trust=$(( (latest - 2000) / 1000 * 1000 ))
+    [ "$trust" -gt 0 ] || return 1
+
+    if ! primary_hash=$(fetch_state_sync_commit_hash "$primary_rpc" "$trust"); then
+        echo "Primary state-sync RPC did not return a valid trusted commit." >&2
+        return 1
+    fi
+    if ! witness_hash=$(fetch_state_sync_commit_hash "$witness_rpc" "$trust"); then
+        echo "Witness state-sync RPC did not return a valid trusted commit." >&2
+        return 1
+    fi
+    if [ "$primary_hash" != "$witness_hash" ]; then
+        echo "State-sync RPCs disagree at trusted height $trust. Refusing state sync." >&2
+        return 1
+    fi
+
+    grep -q '^\[statesync\]' "$CFG" || return 1
     sed -i "/^\[statesync\]/,/^\[/ { \
       s/^enable *=.*/enable = true/; \
-      s#^rpc_servers *=.*#rpc_servers = \"$rpc,$rpc\"#; \
+      s#^rpc_servers *=.*#rpc_servers = \"$primary_rpc,$witness_rpc\"#; \
       s/^trust_height *=.*/trust_height = $trust/; \
-      s/^trust_hash *=.*/trust_hash = \"$hash\"/; \
+      s/^trust_hash *=.*/trust_hash = \"$primary_hash\"/; \
       s/^trust_period *=.*/trust_period = \"168h0m0s\"/ }" "$CFG"
 
-    echo "State sync configured: trusted height $trust via $rpc"
+    echo "State sync configured: trusted height $trust matched across two CometBFT RPC endpoints."
 }
 
 if [ "$LIMONATA_STATE_SYNC" = "y" ]; then
     if ! configure_state_sync; then
-        echo "WARNING: State sync configuration failed because the official CometBFT RPC did not return valid trust data."
+        echo "WARNING: State sync configuration failed because two CometBFT RPC endpoints could not independently agree on valid trust data."
         CONTINUE_GENESIS=$(prompt_short_yes_no "Continue with normal genesis sync instead? (y/n, default n): " n)
         if [ "$CONTINUE_GENESIS" != "y" ]; then
             echo "Installation stopped before the service was created. Re-run when the state-sync RPC is available, or choose normal genesis sync."
