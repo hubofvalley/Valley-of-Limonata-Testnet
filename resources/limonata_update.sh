@@ -77,8 +77,19 @@ fi
 UPDATE_TMP=$(mktemp -d)
 BACKUP_BINARY="$UPDATE_TMP/limonatad.previous"
 GNUPG_HOME="$UPDATE_TMP/gnupg"
+UPDATE_IN_PROGRESS=0
 cleanup() {
-    rm -rf "$UPDATE_TMP"
+    # Never discard the only saved executable while recovery is unverified.
+    # The mktemp directory is private (0700); operators must clean it manually.
+    if [[ "$UPDATE_IN_PROGRESS" == 1 ]]; then
+        if [[ -f "$BACKUP_BINARY" ]]; then
+            echo "CRITICAL: Original binary backup retained for manual recovery: $BACKUP_BINARY" >&2
+        else
+            echo "CRITICAL: Update interrupted; original binary backup is missing." >&2
+        fi
+        return 0
+    fi
+    rm -rf -- "$UPDATE_TMP"
 }
 trap cleanup EXIT
 mkdir -p "$GNUPG_HOME"
@@ -154,13 +165,16 @@ restore_previous_binary() {
 
 abort_and_restore() {
     echo "Limonata update failed: $1" >&2
-    if ! restore_previous_binary; then
+    if restore_previous_binary; then
+        UPDATE_IN_PROGRESS=0
+    else
         echo "CRITICAL: Rollback incomplete. Manual operator recovery is required." >&2
     fi
     exit 1
 }
 
 cp "$legacy_binary" "$BACKUP_BINARY"
+UPDATE_IN_PROGRESS=1
 sudo systemctl stop "$LIMONATA_SERVICE_NAME"
 
 if [[ "$legacy_binary" == "$HOME"/* ]]; then
@@ -178,6 +192,7 @@ fi
 
 sudo systemctl daemon-reload || abort_and_restore "systemd daemon-reload failed"
 if sudo systemctl restart "$LIMONATA_SERVICE_NAME" && systemctl is-active --quiet "$LIMONATA_SERVICE_NAME"; then
+    UPDATE_IN_PROGRESS=0
     echo "Limonata binary updated and service restarted successfully!"
 else
     abort_and_restore "service failed to restart or is not active"

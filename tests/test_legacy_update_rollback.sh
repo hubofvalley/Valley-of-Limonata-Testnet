@@ -14,6 +14,9 @@ for marker in 'restore_previous_binary() {' 'abort_and_restore() {' \
 done
 {
     printf 'set -euo pipefail\n'
+    printf 'UPDATE_IN_PROGRESS=0\n'
+    sed -n '/^cleanup() {/,/^}/p' "$updater"
+    printf 'trap cleanup EXIT\n'
     sed -n '/^restore_previous_binary() {/,/^}/p' "$updater"
     sed -n '/^abort_and_restore() {/,/^}/p' "$updater"
     sed -n '/^cp "\$legacy_binary" "\$BACKUP_BINARY"$/,$p' "$updater"
@@ -45,6 +48,7 @@ case "$*" in
     "systemctl stop limonatad") exit 0 ;;
     "systemctl daemon-reload") [ "${FAIL_DAEMON_RELOAD:-0}" != 1 ] ;;
     "systemctl restart limonatad")
+        if [ "${FAIL_ALL_RESTART:-0}" = 1 ]; then exit 1; fi
         if [ "${FAIL_FIRST_RESTART:-0}" = 1 ] && [ ! -e "$MOCK_DIR/restart-failed" ]; then
             : > "$MOCK_DIR/restart-failed"; exit 1
         fi
@@ -90,6 +94,7 @@ SH
             restart-error) export FAIL_FIRST_RESTART=1 ;;
             inactive-error) export FAIL_FIRST_ACTIVE=1 ;;
             restore-error) export STAGED_VERSION_MODE=fail FAIL_SECOND_INSTALL=1 ;;
+            rollback-restart-error) export FAIL_ALL_RESTART=1 ;;
             success) : ;;
             *) exit 2 ;;
         esac
@@ -101,11 +106,20 @@ SH
         grep -Fq 'echo v0.3.6' "$dir/home/go/bin/limonatad" || { echo "Target not installed"; exit 1; }
     else
         [ "$rc" -ne 0 ] || { echo "False success: $scenario"; exit 1; }
-        if [ "$scenario" = restore-error ]; then
+        if [ "$scenario" = restore-error ] || [ "$scenario" = rollback-restart-error ]; then
             grep -Fq 'CRITICAL: Rollback incomplete' "$dir/output" || { cat "$dir/output"; exit 1; }
+            grep -Fq 'Original binary backup retained for manual recovery' "$dir/output" || {
+                cat "$dir/output"; exit 1;
+            }
+            cmp -s "$dir/original" "$dir/update/limonatad.previous" || {
+                echo "Recovery backup lost: $scenario"; exit 1;
+            }
         else
             cmp -s "$dir/original" "$dir/home/go/bin/limonatad" || {
                 echo "Previous binary not restored: $scenario"; exit 1;
+            }
+            [ ! -e "$dir/update" ] || {
+                echo "Temporary update files not cleaned: $scenario"; exit 1;
             }
         fi
     fi
@@ -124,4 +138,5 @@ run_case daemon-error 1
 run_case restart-error 2
 run_case inactive-error 2
 run_case restore-error 0
-echo "PASS: 8 sandbox-only legacy updater rollback scenarios"
+run_case rollback-restart-error 2
+echo "PASS: 9 sandbox-only legacy updater rollback scenarios"
