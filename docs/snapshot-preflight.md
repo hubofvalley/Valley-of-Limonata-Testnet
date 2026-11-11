@@ -9,6 +9,14 @@ chain ID, height, sync status and recent latest-block timestamps; and fails
 closed if provider metadata changes during the check.
 
 The RPC freshness limit is reviewed in `VERSIONS.json` (currently 600 seconds).
+The reviewed RPC pair is POSTHUMAN and ANODE, matching the independent
+testnet witnesses used by the state-sync installer review. On 2026-11-11,
+both reported the same `limonata_10777-1` block/commit at height 5455000;
+the previously configured `cosmos-rpc.limonata.xyz/status` returned HTTP 503
+with a maintenance response, so it cannot satisfy the mandatory live RPC
+check. This endpoint selection is **not** an automatic fallback or a claim
+that either provider will remain available. If either reviewed RPC fails,
+the preflight must still return `UNKNOWN`.
 Both RPCs must report a valid UTC latest-block timestamp within that limit;
 `catching_up=false` alone does not demonstrate that a public endpoint is live.
 The check uses the operator host's UTC clock and fails closed if a timestamp is
@@ -26,6 +34,12 @@ or operator secrets. Results are `PRECHECK_PASS` or `UNKNOWN`. A precheck pass
 **does not verify the archive payload** and is not approval to restore, delete,
 reset, or overwrite a node. The tool never downloads the archive, performs a
 service operation, accesses signing keys, or modifies node configuration.
+
+This preflight also does **not** impose a maximum snapshot age or block lag.
+A metadata-consistent archive can be days behind the network. Compare the
+reported `HEIGHT` against `RPC_HEIGHTS` and inspect the provider's
+`snapshot_time` separately before planning recovery; neither comparison
+proves that an archive is safe to restore.
 
 On an eventual, separately authorized recovery, the operator must independently
 verify the SHA-256 of the **fully downloaded** archive against the reviewed

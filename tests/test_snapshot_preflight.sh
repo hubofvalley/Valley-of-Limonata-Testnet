@@ -37,8 +37,12 @@ case "$url" in
         cp "$MOCK_FIXTURES/headers" "$dest"
         printf '200'
         ;;
-    *rpc-limonata.posthuman.digital/status) cp "$MOCK_FIXTURES/rpc-b.json" "$dest" ;;
-    *cosmos-rpc.limonata.xyz/status) cp "$MOCK_FIXTURES/rpc-a.json" "$dest" ;;
+    *rpc-limonata.posthuman.digital/status)
+        [ "${MOCK_PRIMARY_FAIL:-0}" != 1 ] || exit 22
+        cp "$MOCK_FIXTURES/rpc-a.json" "$dest" ;;
+    *limonata.rpc.t.anode.team/status)
+        [ "${MOCK_SECONDARY_FAIL:-0}" != 1 ] || exit 22
+        cp "$MOCK_FIXTURES/rpc-b.json" "$dest" ;;
     *) exit 92 ;;
 esac
 MOCK
@@ -69,7 +73,7 @@ EOF
 }
 
 run_case() {
-    env -u MOCK_ROTATE -u MOCK_HEAD_FAIL \
+    env -u MOCK_ROTATE -u MOCK_HEAD_FAIL -u MOCK_PRIMARY_FAIL -u MOCK_SECONDARY_FAIL \
         MOCK_FIXTURES="$tmp/fixtures" MOCK_STATE="$tmp/state" \
         PATH="$tmp/fake-bin:$PATH" \
         bash "$tmp/repo/resources/limonata_snapshot_preflight.sh" > "$tmp/result" 2>&1
@@ -95,6 +99,24 @@ grep -Fq 'STATUS: PRECHECK_PASS (metadata consistency only)' "$tmp/result"
 grep -Fq 'ARCHIVE_INTEGRITY: UNVERIFIED' "$tmp/result"
 grep -Fq 'RESTORE_READINESS: UNKNOWN' "$tmp/result"
 printf 'PASS: matching provider metadata, manifest, HEAD and two public RPCs\n'
+
+reset_fixtures
+export MOCK_PRIMARY_FAIL=1 MOCK_FIXTURES="$tmp/fixtures" MOCK_STATE="$tmp/state"
+if PATH="$tmp/fake-bin:$PATH" bash "$tmp/repo/resources/limonata_snapshot_preflight.sh" > "$tmp/result" 2>&1; then
+    echo 'FAIL: unavailable primary RPC passed' >&2; exit 1
+fi
+grep -Fq 'STATUS: UNKNOWN' "$tmp/result" || { cat "$tmp/result" >&2; exit 1; }
+unset MOCK_PRIMARY_FAIL
+printf 'PASS: primary RPC unavailable is UNKNOWN (no silent fallback)\n'
+
+reset_fixtures
+export MOCK_SECONDARY_FAIL=1 MOCK_FIXTURES="$tmp/fixtures" MOCK_STATE="$tmp/state"
+if PATH="$tmp/fake-bin:$PATH" bash "$tmp/repo/resources/limonata_snapshot_preflight.sh" > "$tmp/result" 2>&1; then
+    echo 'FAIL: unavailable witness RPC passed' >&2; exit 1
+fi
+grep -Fq 'STATUS: UNKNOWN' "$tmp/result" || { cat "$tmp/result" >&2; exit 1; }
+unset MOCK_SECONDARY_FAIL
+printf 'PASS: witness RPC unavailable is UNKNOWN (no silent fallback)\n'
 
 reset_fixtures
 jq '.chain_id="other-chain"' "$tmp/fixtures/metadata.json" > "$tmp/fixtures/changed" && mv "$tmp/fixtures/changed" "$tmp/fixtures/metadata.json"
