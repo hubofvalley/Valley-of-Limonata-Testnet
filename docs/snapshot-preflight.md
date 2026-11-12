@@ -36,10 +36,24 @@ reset, or overwrite a node. The tool never downloads the archive, performs a
 service operation, accesses signing keys, or modifies node configuration.
 
 This preflight also does **not** impose a maximum snapshot age or block lag.
-A metadata-consistent archive can be days behind the network. Compare the
-reported `HEIGHT` against `RPC_HEIGHTS` and inspect the provider's
-`snapshot_time` separately before planning recovery; neither comparison
-proves that an archive is safe to restore.
+It reports `SNAPSHOT_AGE_SECONDS` using the provider's untrusted
+`snapshot_time` and the local UTC clock. Missing, malformed, or future
+timestamps report `UNKNOWN` rather than an invented zero age. The reported
+`SNAPSHOT_LAG_BLOCKS` is the snapshot height subtracted from the *lower*
+of the two validated RPC heights, a conservative lower bound on observed
+lag. Both are informational and do **not** change the existing
+`PRECHECK_PASS (metadata consistency only)` result or grant permission
+to restore. In particular, a stale archive can still pass the metadata
+preflight. Treat its age and lag as explicit operator decision inputs, not
+cryptographic proof of recovery readiness.
+
+On 2026-11-12 the publicly available POSTHUMAN metadata still dated the
+archive 2026-11-07T19:33:15Z (height 5,363,250), while ANODE reported
+height above 5,476,000. The reviewed POSTHUMAN RPC returned HTTP 502 and
+the official Cosmos RPC HTTP 503 during this check, so a successful
+two-witness live preflight was **not** established on that date. The
+diagnostic addition is validated with deterministic fixtures; it does not
+weaken the mandatory two-RPC fail-closed gate or introduce a fallback.
 
 On an eventual, separately authorized recovery, the operator must independently
 verify the SHA-256 of the **fully downloaded** archive against the reviewed

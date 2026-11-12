@@ -72,6 +72,19 @@ digest=$(jq -er '.snapshot_sha256 | select(type == "string")' "$tmp/metadata.jso
 safe_height "$height" && [[ "$size" =~ ^[1-9][0-9]*$ ]] || die "non-integer or unsafe snapshot height or size"
 [[ "$digest" =~ ^[0-9A-Fa-f]{64}$ ]] || die "invalid snapshot SHA-256"
 
+# Informational only: snapshot age is provider-claimed, not a freshness gate.
+# Missing, malformed or future timestamps must never become an invented age.
+snapshot_time=$(jq -er '.snapshot_time | select(type == "string")' "$tmp/metadata.json" 2>/dev/null) || snapshot_time=''
+snapshot_age_seconds=UNKNOWN
+if [[ "$snapshot_time" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,9})?Z$ ]] \
+    && snapshot_epoch=$(date -u -d "$snapshot_time" +%s 2>/dev/null) \
+    && [[ "$snapshot_epoch" =~ ^[1-9][0-9]*$ ]] \
+    && (( snapshot_epoch <= now_epoch )); then
+    snapshot_age_seconds=$((now_epoch - snapshot_epoch))
+else
+    snapshot_time=UNKNOWN
+fi
+
 match_count=$(awk -v name="$name" 'NF == 2 && $2 == name { n++ } END { print n+0 }' "$tmp/checksums")
 [ "$match_count" = 1 ] || die "snapshot checksum manifest has missing or duplicate filename"
 manifest_digest=$(awk -v name="$name" 'NF == 2 && $2 == name { print $1 }' "$tmp/checksums")
@@ -111,6 +124,13 @@ check_rpc() {
 height_a=$(check_rpc "$rpc_a" "$tmp/rpc-a.json") || die "primary RPC check failed"
 height_b=$(check_rpc "$rpc_b" "$tmp/rpc-b.json") || die "secondary RPC check failed"
 
+# Minimum witnessed height gives a conservative lower bound for block lag.
+lowest_rpc_height=$height_a
+if (( height_b < height_a )); then
+    lowest_rpc_height=$height_b
+fi
+snapshot_lag_blocks=$((lowest_rpc_height - height))
+
 # A rotating latest alias may change during the preflight. Refuse such a race.
 fetch_small "$snapshot_base/snapshot.json" "$tmp/metadata-again.json"
 fetch_small "$snapshot_base/SHA256SUMS" "$tmp/checksums-again"
@@ -120,5 +140,6 @@ cmp -s "$tmp/checksums" "$tmp/checksums-again" || die "checksum manifest changed
 printf 'STATUS: PRECHECK_PASS (metadata consistency only)\n'
 printf 'CHAIN_ID: %s\nSNAPSHOT: %s\nHEIGHT: %s\nARCHIVE_SIZE_BYTES: %s\n' "$chain_id" "$name" "$height" "$size"
 printf 'SHA256_EXPECTED: %s\nRPC_HEIGHTS: %s, %s\n' "${digest,,}" "$height_a" "$height_b"
+printf 'SNAPSHOT_TIME_UTC: %s\nSNAPSHOT_AGE_SECONDS: %s\nSNAPSHOT_LAG_BLOCKS: %s\n' "$snapshot_time" "$snapshot_age_seconds" "$snapshot_lag_blocks"
 printf 'ARCHIVE_INTEGRITY: UNVERIFIED — archive bytes were not downloaded or hashed.\n'
 printf 'RESTORE_READINESS: UNKNOWN — do not restore without a full post-download checksum and validator-state recovery review.\n'

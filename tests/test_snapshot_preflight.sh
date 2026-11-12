@@ -63,7 +63,7 @@ digest=5b4dee0d19a954c47927d68f3dc12fb780976587c7d9f13824e5a02ce7828d1b
 reset_fixtures() {
     rm -f "$tmp/state/metadata_seen"
     cat > "$tmp/fixtures/metadata.json" <<EOF
-{"snapshot_name":"limonata_10777-1-latest.tar.lz4","snapshot_height":4789771,"snapshot_size_bytes":44529407354,"snapshot_sha256":"$digest","chain_id":"limonata_10777-1","snapshot_layout":["data"],"snapshot_compression":"lz4"}
+{"snapshot_name":"limonata_10777-1-latest.tar.lz4","snapshot_height":4789771,"snapshot_size_bytes":44529407354,"snapshot_sha256":"$digest","snapshot_time":"2026-10-27T18:00:00Z","chain_id":"limonata_10777-1","snapshot_layout":["data"],"snapshot_compression":"lz4"}
 EOF
     cp "$tmp/fixtures/metadata.json" "$tmp/fixtures/metadata-rotated.json"
     printf '%s  %s\n' "$digest" 'limonata_10777-1-latest.tar.lz4' > "$tmp/fixtures/SHA256SUMS"
@@ -98,7 +98,33 @@ run_case || { cat "$tmp/result" >&2; exit 1; }
 grep -Fq 'STATUS: PRECHECK_PASS (metadata consistency only)' "$tmp/result"
 grep -Fq 'ARCHIVE_INTEGRITY: UNVERIFIED' "$tmp/result"
 grep -Fq 'RESTORE_READINESS: UNKNOWN' "$tmp/result"
+grep -Fxq 'SNAPSHOT_TIME_UTC: 2026-10-27T18:00:00Z' "$tmp/result"
+grep -Fxq 'SNAPSHOT_AGE_SECONDS: 43200' "$tmp/result"
+grep -Fxq 'SNAPSHOT_LAG_BLOCKS: 5370' "$tmp/result"
 printf 'PASS: matching provider metadata, manifest, HEAD and two public RPCs\n'
+
+# Observations never impose an invented snapshot freshness policy.
+reset_fixtures
+jq '.result.sync_info.latest_block_height="4795000"' "$tmp/fixtures/rpc-b.json" > "$tmp/fixtures/changed" && mv "$tmp/fixtures/changed" "$tmp/fixtures/rpc-b.json"
+run_case || { cat "$tmp/result" >&2; exit 1; }
+grep -Fxq 'SNAPSHOT_LAG_BLOCKS: 5229' "$tmp/result"
+printf 'PASS: lag uses lower witnessed RPC height\n'
+
+for variant in missing malformed future; do
+    reset_fixtures
+    case "$variant" in
+        missing) jq 'del(.snapshot_time)' "$tmp/fixtures/metadata.json" > "$tmp/fixtures/changed" ;;
+        malformed) jq '.snapshot_time="not-a-date"' "$tmp/fixtures/metadata.json" > "$tmp/fixtures/changed" ;;
+        future) jq '.snapshot_time="2026-10-28T06:00:01Z"' "$tmp/fixtures/metadata.json" > "$tmp/fixtures/changed" ;;
+    esac
+    mv "$tmp/fixtures/changed" "$tmp/fixtures/metadata.json"
+    run_case || { cat "$tmp/result" >&2; exit 1; }
+    grep -Fxq 'STATUS: PRECHECK_PASS (metadata consistency only)' "$tmp/result"
+    grep -Fxq 'SNAPSHOT_TIME_UTC: UNKNOWN' "$tmp/result"
+    grep -Fxq 'SNAPSHOT_AGE_SECONDS: UNKNOWN' "$tmp/result"
+    grep -Fxq 'RESTORE_READINESS: UNKNOWN — do not restore without a full post-download checksum and validator-state recovery review.' "$tmp/result"
+    printf 'PASS: %s snapshot timestamp reports UNKNOWN age, never zero\n' "$variant"
+done
 
 reset_fixtures
 export MOCK_PRIMARY_FAIL=1 MOCK_FIXTURES="$tmp/fixtures" MOCK_STATE="$tmp/state"
