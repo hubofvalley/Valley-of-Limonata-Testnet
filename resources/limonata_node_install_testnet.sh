@@ -225,8 +225,7 @@ verify_genesis_candidate() {
 }
 
 GENESIS_CANDIDATE="$WORKDIR/limonata-genesis.json"
-curl -fsSL --connect-timeout 5 --max-time 30 --max-filesize 5000000 \
-    "$LIMONATA_GENESIS_URL" -o "$GENESIS_CANDIDATE"
+curl -fsSL "$LIMONATA_GENESIS_URL" -o "$GENESIS_CANDIDATE"
 if ! verify_genesis_candidate "$GENESIS_CANDIDATE"; then
     exit 1
 fi
