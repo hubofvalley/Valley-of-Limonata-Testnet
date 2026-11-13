@@ -21,7 +21,7 @@ grep -Fq "readonly VALLEY_INSTALLER_SHA256=\"${installer_sha}\"" "$wrapper" || f
 grep -Fq "readonly VALLEY_UPDATER_SHA256=\"${updater_sha}\"" "$wrapper" || fail "wrapper updater SHA pin mismatch"
 grep -Fq 'sha256sum "$child_path"' "$wrapper" || fail "wrapper does not hash child scripts before execution"
 grep -Fq 'Valley child script integrity check failed. Refusing execution.' "$wrapper" || fail "wrapper lacks fail-closed child integrity guard"
-grep -Fq 'readonly VALLEY_SCRIPT_COMMIT="cb3d18edf512c041bd3deb3e1a92b9e4a476d565"' "$wrapper" || fail "wrapper child commit is not immutable"
+grep -Fq 'readonly VALLEY_SCRIPT_COMMIT="0d837643ef603ae51e2dfa3ffc25044470d97ff3"' "$wrapper" || fail "wrapper child commit is not immutable"
 grep -Fq 'curl -fsSL "${VALLEY_SCRIPT_BASE}/${script_name}"' "$wrapper" || fail "remote child download is not fail-closed"
 
 if grep -RIEq 'raw\.githubusercontent\.com/.*/main|/releases/latest/' README.md docs resources; then
