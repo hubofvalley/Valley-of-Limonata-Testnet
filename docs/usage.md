@@ -142,6 +142,11 @@ scripts unless their local SHA-256 matches its reviewed pins.
   disagrees on the hash, the
   installer refuses state sync and offers normal genesis sync instead. If you
   explicitly want to execute from block 1, choose state sync OFF.
+- **Genesis source change (2026-11-13)**: the upstream mutable genesis URL now
+  serves another chain. The testnet installer verifies the pinned testnet
+  checksum and chain ID before staging binaries or initializing the node, and
+  refuses installation while no reviewed testnet genesis is available. Do not
+  bypass this guard or substitute mainnet genesis.
 - **UFW ON**: preserves the SSH port you provide and opens the selected Limonata
   P2P port.
 

@@ -67,14 +67,42 @@ make install
 Both the prebuilt and source paths converge on `$HOME/go/bin/limonatad` before
 Cosmovisor is initialized.
 
-## Initialise the node and fetch genesis
+## Authenticate testnet genesis before initializing the node
+
+As observed on **2026-11-13**, the mutable official URL
+`https://limonata.xyz/genesis.json` serves `limonata_20777-1`, **not** the
+pinned testnet `limonata_10777-1`. Its SHA-256 does not match the reviewed
+testnet digest. Do not use this URL to initialize a testnet node until the
+upstream publishes a verifiable testnet-specific source. Do not remove the
+checksum or switch this testnet tool to mainnet parameters. The automated
+installer checks the candidate **before** installing a binary or initializing
+a node home, but may still install OS prerequisites before this check.
+
+For a later verified testnet source, the manual operation must preserve this
+order: download into a temporary file, verify both digest and chain ID, then
+initialize the node and install the authenticated genesis. The following
+example deliberately refuses the currently mismatching URL:
 
 ```bash
 MONIKER="your-moniker"
 LIMONATA_HOME="$HOME/.limonatad"
-$HOME/go/bin/limonatad --home "$LIMONATA_HOME" init "$MONIKER" --chain-id limonata_10777-1
-curl -fsSL https://limonata.xyz/genesis.json -o "$LIMONATA_HOME/config/genesis.json"
-$HOME/go/bin/limonatad --home "$LIMONATA_HOME" genesis validate-genesis
+GENESIS_CANDIDATE=$(mktemp)
+if curl -fsSL https://limonata.xyz/genesis.json -o "$GENESIS_CANDIDATE" \
+   && printf '%s  %s\n' \
+      'bb76a6d8abbb1bdeaa41d92811066b16bd6a48f58f7136e3fcb71226b6af4569' \
+      "$GENESIS_CANDIDATE" | sha256sum -c - \
+   && jq -e '.chain_id == "limonata_10777-1"' "$GENESIS_CANDIDATE" >/dev/null; then
+    if "$HOME/go/bin/limonatad" --home "$LIMONATA_HOME" init "$MONIKER" --chain-id limonata_10777-1 \
+       && install -m 0644 "$GENESIS_CANDIDATE" "$LIMONATA_HOME/config/genesis.json" \
+       && "$HOME/go/bin/limonatad" --home "$LIMONATA_HOME" genesis validate-genesis; then
+        echo "Testnet genesis verified and installed."
+    else
+        echo "Node initialization or genesis validation failed; inspect partial state manually." >&2
+    fi
+else
+    echo "REFUSED: upstream genesis is not the reviewed Limonata testnet genesis." >&2
+fi
+rm -f -- "$GENESIS_CANDIDATE"
 ```
 
 ## Cosmovisor layout

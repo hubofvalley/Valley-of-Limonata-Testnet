@@ -197,6 +197,40 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Verify the canonical testnet genesis before installing executables or
+# initializing a node home. The upstream URL is mutable and may point to a
+# different network; a late failure would strand a partially installed node.
+verify_genesis_candidate() {
+    local candidate=$1 actual_sha chain_id
+    if ! actual_sha=$(sha256sum "$candidate" | awk '{print $1}'); then
+        echo "Could not hash genesis candidate. Refusing installation." >&2
+        return 1
+    fi
+    if [ "$actual_sha" != "$LIMONATA_GENESIS_SHA256" ]; then
+        echo "Pinned genesis SHA256 mismatch. Refusing installation." >&2
+        echo "Expected: $LIMONATA_GENESIS_SHA256" >&2
+        echo "Observed: $actual_sha" >&2
+        echo "The upstream URL may now serve another network; obtain a reviewed testnet source before retrying." >&2
+        return 1
+    fi
+    if ! chain_id=$(jq -r '.chain_id // empty' "$candidate"); then
+        echo "Malformed genesis JSON. Refusing installation." >&2
+        return 1
+    fi
+    if [ "$chain_id" != "limonata_10777-1" ]; then
+        echo "Genesis chain-id mismatch. Refusing installation." >&2
+        echo "Observed: ${chain_id:-<missing>}" >&2
+        return 1
+    fi
+}
+
+GENESIS_CANDIDATE="$WORKDIR/limonata-genesis.json"
+curl -fsSL --connect-timeout 5 --max-time 30 --max-filesize 5000000 \
+    "$LIMONATA_GENESIS_URL" -o "$GENESIS_CANDIDATE"
+if ! verify_genesis_candidate "$GENESIS_CANDIDATE"; then
+    exit 1
+fi
+
 install_go_toolchain() {
     local archive="$WORKDIR/go${GO_VERSION}.linux-amd64.tar.gz"
 
@@ -376,40 +410,9 @@ if [[ "$SETUP_UFW" =~ ^[Yy]$ ]]; then
     sudo ufw status verbose
 fi
 
-# A checksum mismatch, unavailable file, malformed JSON, or wrong chain must
-# block the candidate before it can replace the initialized genesis.
-verify_genesis_candidate() {
-    local candidate=$1 actual_sha chain_id
-    if ! actual_sha=$(sha256sum "$candidate" | awk '{print $1}'); then
-        echo "Could not hash genesis candidate. Refusing installation." >&2
-        return 1
-    fi
-    if [ "$actual_sha" != "$LIMONATA_GENESIS_SHA256" ]; then
-        echo "Pinned genesis SHA256 mismatch. Refusing installation." >&2
-        echo "Expected: $LIMONATA_GENESIS_SHA256" >&2
-        echo "Observed: $actual_sha" >&2
-        return 1
-    fi
-    if ! chain_id=$(jq -r '.chain_id // empty' "$candidate"); then
-        echo "Malformed genesis JSON. Refusing installation." >&2
-        return 1
-    fi
-    if [ "$chain_id" != "limonata_10777-1" ]; then
-        echo "Genesis chain-id mismatch. Refusing installation." >&2
-        echo "Observed: ${chain_id:-<missing>}" >&2
-        return 1
-    fi
-}
-
-# Initialize using the pinned v0.3.6 binary, then authenticate the canonical
-# genesis bytes before installing them into the node home. An otherwise valid
-# JSON document from the mutable URL is not sufficient chain provenance.
+# The candidate was authenticated before any executable or node home existed.
+# Initialize with the pinned binary, then install only those reviewed bytes.
 "$LIMONATA_BIN" --home "$LIMONATA_HOME" init "$LIMONATA_MONIKER" --chain-id limonata_10777-1
-GENESIS_CANDIDATE="$WORKDIR/limonata-genesis.json"
-curl -fsSL "$LIMONATA_GENESIS_URL" -o "$GENESIS_CANDIDATE"
-if ! verify_genesis_candidate "$GENESIS_CANDIDATE"; then
-    exit 1
-fi
 install -m 0644 "$GENESIS_CANDIDATE" "$LIMONATA_HOME/config/genesis.json"
 "$LIMONATA_BIN" --home "$LIMONATA_HOME" genesis validate-genesis
 

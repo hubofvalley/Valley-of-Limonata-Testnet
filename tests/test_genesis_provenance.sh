@@ -14,12 +14,15 @@ jq -e --arg sha "$expected_sha" '.network_facts.genesis_sha256 == $sha' "$manife
 
 # The download, verification gate and install must run in that order.
 line_of() { grep -nF "$1" "$installer" | head -n 1 | cut -d: -f1; }
-fetch_line=$(line_of 'curl -fsSL "$LIMONATA_GENESIS_URL" -o "$GENESIS_CANDIDATE"')
+fetch_line=$(line_of '"$LIMONATA_GENESIS_URL" -o "$GENESIS_CANDIDATE"')
 verify_line=$(line_of 'if ! verify_genesis_candidate "$GENESIS_CANDIDATE"; then')
 install_line=$(line_of 'install -m 0644 "$GENESIS_CANDIDATE" "$LIMONATA_HOME/config/genesis.json"')
 validate_line=$(line_of '"$LIMONATA_BIN" --home "$LIMONATA_HOME" genesis validate-genesis')
-[[ "$fetch_line" =~ ^[0-9]+$ && "$verify_line" =~ ^[0-9]+$ && "$install_line" =~ ^[0-9]+$ && "$validate_line" =~ ^[0-9]+$ ]] || fail "genesis provenance sequence missing"
-((fetch_line < verify_line && verify_line < install_line && install_line < validate_line)) || fail "genesis installed before provenance validation"
+cosmovisor_line=$(grep -n '^install_cosmovisor$' "$installer" | head -n 1 | cut -d: -f1)
+binary_line=$(line_of 'install -m 0755 "$STAGED_BINARY" "$LIMONATA_BIN"')
+init_line=$(line_of '"$LIMONATA_BIN" --home "$LIMONATA_HOME" init')
+[[ "$fetch_line" =~ ^[0-9]+$ && "$verify_line" =~ ^[0-9]+$ && "$cosmovisor_line" =~ ^[0-9]+$ && "$binary_line" =~ ^[0-9]+$ && "$init_line" =~ ^[0-9]+$ && "$install_line" =~ ^[0-9]+$ && "$validate_line" =~ ^[0-9]+$ ]] || fail "genesis provenance sequence missing"
+((fetch_line < verify_line && verify_line < cosmovisor_line && cosmovisor_line < binary_line && binary_line < init_line && init_line < install_line && install_line < validate_line)) || fail "genesis was fetched or validated after executable installation or node initialization"
 
 # Extract and execute only the small pure validation helper; never source the
 # interactive installer, open a node home or contact a network.
@@ -38,6 +41,16 @@ if verify_genesis_candidate "$temp_dir/valid.json" > "$temp_dir/output" 2>&1; th
     fail "modified genesis accepted"
 fi
 grep -Fq 'Pinned genesis SHA256 mismatch' "$temp_dir/output" || fail "digest rejection not explained"
+
+# Current mutable upstream URL serves a different chain. This must fail on
+# provenance, not silently stage a mainnet genesis for the testnet installer.
+printf '{"chain_id":"limonata_20777-1"}\n' > "$temp_dir/mainnet.json"
+LIMONATA_GENESIS_SHA256="$expected_sha"
+if verify_genesis_candidate "$temp_dir/mainnet.json" > "$temp_dir/output" 2>&1; then
+    fail "mainnet genesis accepted by testnet installer"
+fi
+grep -Fq 'Pinned genesis SHA256 mismatch' "$temp_dir/output" || fail "wrong-network digest mismatch not explained"
+grep -Fq 'reviewed testnet source' "$temp_dir/output" || fail "operator guidance missing on upstream genesis transition"
 
 printf '{"chain_id":"unexpected-chain"}\n' > "$temp_dir/wrong-chain.json"
 LIMONATA_GENESIS_SHA256=$(sha256sum "$temp_dir/wrong-chain.json" | awk '{print $1}')
