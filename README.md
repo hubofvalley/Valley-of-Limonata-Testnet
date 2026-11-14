@@ -18,10 +18,12 @@ Supported platform: Linux x86_64 (AMD64).
 - Native denom: `aLIMO` (1 LIMO = 10^18 aLIMO)
 - Binary command: `~/go/bin/limonatad`
 - Reviewed release: `limonata-v0.3.6` (`effa377d673fc6f0fb307a78ca54e037e53060f7`)
-- Process manager: Cosmovisor (`v1.7.1` in the Valley installer)
+- Process manager: Cosmovisor (`v1.7.3`, pinned official release artifact)
+- Cosmovisor executable: `~/.local/libexec/valley-of-limonata/cosmovisor` (never overwrites a host-global binary)
 - Active binary target: `~/.limonatad/cosmovisor/current/bin/limonatad`
 - Service: `limonatad.service`
-- Genesis: https://limonata.xyz/genesis.json
+- Genesis: the former public URL https://limonata.xyz/genesis.json now serves
+  mainnet (`limonata_20777-1`); it is **not** a testnet bootstrap source.
 - Faucet: https://faucet.limonata.xyz
 
 Fresh Valley installs use the official `v0.3.6` binary as the Cosmovisor genesis
@@ -49,7 +51,7 @@ downloads child scripts with fail-closed curl flags when needed, and verifies
 their pinned SHA-256 before executing them.
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/0739abeb408e23f31f9f2c94ea2817b3f8c6d347/resources/valleyofLimonata.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/0e501e71c94fa731e803a9aa441c4912aa5e3024/resources/valleyofLimonata.sh)
 ```
 
 This URL is pinned to the reviewed wrapper commit.
@@ -61,18 +63,33 @@ This URL is pinned to the reviewed wrapper commit.
 
 ## Features
 
-- Deploy/re-deploy Limonata node with pinned v0.3.6, Cosmovisor, validated ports, optional state sync, UFW, and systemd
+- Deploy Limonata node on a fresh host only with pinned v0.3.6, private Cosmovisor, validated ports, optional two-RPC state-sync verification, UFW, and systemd
 - Keep the user-facing `limonatad` command in `~/go/bin`, symlinked to Cosmovisor `current`
 - Verify the official v0.3.6 artifact with pinned SHA-256 plus the official GPG signing fingerprint
 - Verify wrapper child scripts against pinned SHA-256 values before execution
 - Pre-stage replay-safe v0.3.6 across known historical Cosmovisor upgrade slots for genesis sync
 - Protect Cosmovisor-managed nodes from direct replacement and verify reviewed legacy updates with the same signed-release trust contract
 - Add/reset persistent peers
-- Node status (block height, catching_up) and live logs
+- Node status (block height, catching_up) and live logs; the public EVM height
+  is shown only when `eth_chainId` agrees with the configured testnet identity
 - Create/recover operator key, show validator consensus pubkey
 - Create validator (guided `validator.json` + `tx staking create-validator`)
 - Query balance, delegate tokens, query validator status
 - Backup validator key, restart/stop/delete node
+
+The installer now refuses existing node data, binaries, symlinks, and uncertain
+systemd unit state before any installation work. It never offers an automatic
+redeploy or deletes validator signing state. Restoring or migrating an existing
+validator requires a separate, reviewed procedure.
+
+**Network boundary (2026-11-14):** Limonata published a separate mainnet
+startup package (`v0.4.0-mainnet.3`, chain `limonata_20777-1`) on 2026-11-12.
+The former public testnet EVM RPC currently answers `eth_chainId=0x5129`
+(20777), not 10777. Valley is still testnet-only; a responsive mainnet RPC
+must not be used to measure testnet sync progress. Its status view therefore
+refuses a height from an RPC with an unexpected or unverified chain ID. The
+testnet installer likewise rejects a wrong-chain genesis before node setup;
+no mainnet migration or testnet restore is implied.
 
 ## Recommended validator flow
 

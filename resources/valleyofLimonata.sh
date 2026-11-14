@@ -23,9 +23,9 @@ LIMONATA_CHAIN_ID=${LIMONATA_CHAIN_ID:-limonata_10777-1}
 LIMONATA_EVM_CHAIN_ID=${LIMONATA_EVM_CHAIN_ID:-10777}
 LIMONATA_STAKING_GAS_PRICE=${LIMONATA_STAKING_GAS_PRICE:-1000000000aLIMO}
 LIMONATA_TARGET_VERSION=${LIMONATA_TARGET_VERSION:-limonata-v0.3.6}
-readonly VALLEY_INSTALLER_SHA256="e42a89a398bbd0430eceb782c59ce652444e99be7452c7d26263342820082a26"
+readonly VALLEY_INSTALLER_SHA256="a4cac55770147845cae14b7d67312f4457a8bf37261ccb1bf79fca8c80daf4dd"
 readonly VALLEY_UPDATER_SHA256="356f02693b2cd39fd34ebafc57ba268ea59641944d0a8e54892202acf09cf2dc"
-readonly VALLEY_SCRIPT_COMMIT="d4b100bb926b6fd0392c29b0bc0ae61dcb21468f"
+readonly VALLEY_SCRIPT_COMMIT="0d837643ef603ae51e2dfa3ffc25044470d97ff3"
 readonly VALLEY_SCRIPT_BASE="https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/${VALLEY_SCRIPT_COMMIT}/resources"
 VALLEY_SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 VALLEY_REMOTE_TMP=""
@@ -132,7 +132,8 @@ ${GREEN}Network facts:${RESET}
 - Chain ID: ${CYAN}limonata_10777-1${RESET} | EVM Chain ID: ${CYAN}10777${RESET} (hex: 0x2a19)
 - Seed/peer: ${CYAN}4b154368aab24cb5b31c927efd50c73d0f4f9799@142.127.103.79:26656${RESET}
 - Genesis: ${BLUE}https://limonata.xyz/genesis.json${RESET}
-- State-sync RPC: ${BLUE}https://cosmos-rpc.limonata.xyz${RESET}
+- State-sync primary RPC: ${BLUE}https://rpc-limonata.posthuman.digital${RESET}
+- State-sync witness RPC: ${BLUE}https://limonata.rpc.t.anode.team${RESET}
 - No staking inflation (x/mint disabled) - validators earn tx fees + commission
 - Staking gas price: ${CYAN}${LIMONATA_STAKING_GAS_PRICE}${RESET}
 
@@ -246,16 +247,41 @@ function limonata_cmd() {
 
 function hex_to_dec() {
     local value=${1:-}
-    if [[ "$value" =~ ^0x[0-9a-fA-F]+$ ]]; then
-        printf "%d" "$value"
+    local decimal
+    # Limit untrusted RPC quantities before printf/arithmetic: 14 hex digits
+    # fit in a signed 64-bit integer, then enforce exact JSON integer range.
+    if [[ "$value" =~ ^0x[0-9a-fA-F]+$ ]] && [ "${#value}" -le 16 ]; then
+        printf -v decimal '%d' "$value" || return 1
+        if (( decimal <= 9007199254740991 )); then
+            printf '%s\n' "$decimal"
+            return 0
+        fi
     fi
+    return 1
 }
 
 function get_network_height() {
-    local result
-    result=$(curl -m 5 -s -X POST "$LIMONATA_EVM_RPC" \
+    local response remote_chain observed_chain result
+    # An EVM RPC is not a testnet witness merely because it responds to
+    # eth_blockNumber: Limonata's former testnet URL now serves mainnet.
+    if [[ ! "${LIMONATA_EVM_CHAIN_ID:-}" =~ ^[1-9][0-9]*$ ]]; then
+        echo 'Cannot verify expected EVM chain ID; ignoring remote height.' >&2
+        return 1
+    fi
+    response=$(curl -m 5 -fsS -X POST "$LIMONATA_EVM_RPC" \
         -H "Content-Type: application/json" \
-        -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | jq -r '.result // empty' 2>/dev/null)
+        -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}') || return 1
+    remote_chain=$(jq -er 'if (.error? == null) and (.result | type == "string") then .result else empty end' <<<"$response" 2>/dev/null) || return 1
+    observed_chain=$(hex_to_dec "$remote_chain") || return 1
+    if [ "$observed_chain" != "$LIMONATA_EVM_CHAIN_ID" ]; then
+        printf 'EVM RPC chain mismatch: expected %s, received %s. Ignoring remote height.\n' \
+            "$LIMONATA_EVM_CHAIN_ID" "$observed_chain" >&2
+        return 1
+    fi
+    response=$(curl -m 5 -fsS -X POST "$LIMONATA_EVM_RPC" \
+        -H "Content-Type: application/json" \
+        -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}') || return 1
+    result=$(jq -er 'if (.error? == null) and (.result | type == "string") then .result else empty end' <<<"$response" 2>/dev/null) || return 1
     hex_to_dec "$result"
 }
 
@@ -331,10 +357,9 @@ function deploy_limonata_node() {
     echo -e "\n${YELLOW}2. SYSTEM IMPACT:${RESET}"
     echo -e "${GREEN}New Service:${RESET}"
     echo -e "  • ${CYAN}${LIMONATA_SERVICE_NAME}.service${RESET} (Limonata Node)"
-    echo -e "\n${RED}Existing Service to be Replaced:${RESET}"
-    echo -e "  • ${CYAN}${LIMONATA_SERVICE_NAME}${RESET}"
-    echo -e "${RED}Re-deploying permanently deletes ${LIMONATA_HOME}, including local block data and priv_validator_key.json.${RESET}"
-    echo -e "${RED}Back up the validator key with menu 3d and store the operator mnemonic offline before continuing.${RESET}"
+    echo -e "\n${GREEN}Fresh installation only:${RESET}"
+    echo -e "${YELLOW}Existing node data, binaries, and services will be refused, never replaced or deleted.${RESET}"
+    echo -e "${YELLOW}Validator recovery and migration require a separately reviewed procedure.${RESET}"
 
     echo -e "\n${GREEN}Port Configuration:${RESET}"
     echo -e "Ports will be adjusted based on your input (example if you enter 38):"
@@ -369,21 +394,21 @@ function deploy_limonata_node() {
         return
     fi
 
-    if [ -d "$LIMONATA_HOME" ] || [ -f "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service" ] || command -v limonatad >/dev/null 2>&1; then
-        echo -e "\n${RED}An existing Limonata installation was detected.${RESET}"
-        read -r -p "Type REDEPLOY to confirm permanent deletion of the existing node data: " redeploy_confirm
-        if [ "$redeploy_confirm" != "REDEPLOY" ]; then
-            echo -e "${RED}Re-deployment cancelled. No node data was changed.${RESET}"
-            menu
-            return
-        fi
+    if [ -e "$LIMONATA_HOME" ] || [ -L "$LIMONATA_HOME" ] ||
+       [ -e "$HOME/go/bin/limonatad" ] || [ -L "$HOME/go/bin/limonatad" ] ||
+       [ -e "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service" ] ||
+       [ -L "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service" ] ||
+       command -v limonatad >/dev/null 2>&1; then
+        echo -e "\n${RED}Existing Limonata installation detected. Fresh install refused; no node data changed.${RESET}"
+        menu
+        return
     fi
 
     echo -e "\n${GREEN}Starting installation...${RESET}"
     echo -e "${YELLOW}This may take 1-5 minutes. Please don't interrupt the process.${RESET}"
     sleep 2
 
-    if ! run_pinned_valley_child limonata_node_install_testnet.sh LIMONATA_REDEPLOY_CONFIRMED=1; then
+    if ! run_pinned_valley_child limonata_node_install_testnet.sh; then
         echo -e "${RED}Installer child script failed or was refused. No success was recorded.${RESET}"
     fi
     hash -r
@@ -479,7 +504,7 @@ function show_node_status() {
                 echo -e "${YELLOW}A negative value is normal when the local Limonata node is slightly ahead of the public RPC.${RESET}"
             fi
         else
-            echo -e "${YELLOW}Network latest block height: unavailable from $LIMONATA_EVM_RPC${RESET}"
+            echo -e "${YELLOW}Network latest block height: unavailable or wrong chain at $LIMONATA_EVM_RPC${RESET}"
         fi
         echo -e "Catching up: ${YELLOW}$catching_up${RESET}"
         if [ "$catching_up" = "false" ]; then
@@ -885,19 +910,42 @@ function delete_limonata_node() {
     echo -e "${YELLOW}You are about to delete the Limonata node.${RESET}"
     echo -e "${RED}BACKUP YOUR MNEMONIC AND priv_validator_key.json BEFORE YOU DO THIS.${RESET}"
     echo -e "${RED}This permanently removes ${LIMONATA_HOME}, the service, the binary, and saved LIMONATA_* environment variables.${RESET}"
+    echo "WARNING: key-only backup does not preserve last-sign state. Use a reviewed validator recovery procedure."
     read -r -p "Type DELETE to confirm permanent deletion: " delete_confirm
     if [ "$delete_confirm" != "DELETE" ]; then
         echo -e "${GREEN}Deletion cancelled. No node data was changed.${RESET}"
         menu
         return
     fi
-    sudo systemctl stop "$LIMONATA_SERVICE_NAME" || true
-    sudo systemctl disable "$LIMONATA_SERVICE_NAME" || true
-    sudo rm -f "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service"
-    sudo systemctl daemon-reload
+    if ! sudo systemctl stop "$LIMONATA_SERVICE_NAME"; then
+        echo "Refusing deletion: service stop failed."
+        menu
+        return
+    fi
+    if ! sudo systemctl disable "$LIMONATA_SERVICE_NAME"; then
+        echo "Refusing deletion: service disable failed."
+        menu
+        return
+    fi
+    local active_state
+    if ! active_state=$(sudo systemctl show --property=ActiveState --value "$LIMONATA_SERVICE_NAME" 2>/dev/null) ||
+       [ "$active_state" != "inactive" ]; then
+        echo "Refusing deletion: service is not verified inactive."
+        menu
+        return
+    fi
+    if ! sudo rm -f "/etc/systemd/system/${LIMONATA_SERVICE_NAME}.service"; then
+        echo "Refusing node-data deletion: systemd unit removal failed."
+        menu
+        return
+    fi
+    if ! sudo systemctl daemon-reload; then
+        echo "Refusing node-data deletion: systemd reload failed."
+        menu
+        return
+    fi
     sudo rm -rf "$LIMONATA_HOME"
     rm -f "$HOME/go/bin/limonatad"
-    sudo rm -f /usr/local/bin/limonatad
     sed -i "/LIMONATA_/d" "$HOME/.bash_profile"
     hash -r
     echo -e "${RED}Limonata node deleted. Remember to clean up any keys you backed up elsewhere.${RESET}"
@@ -916,7 +964,7 @@ function show_guidelines() {
     echo -e "${GREEN}Navigation:${RESET}"
     echo " - Enter the number/letter pair (e.g., 1a) or type the number then the letter."
     echo " - Reply to normal confirmations with 'yes' or 'no'; press Enter to accept displayed defaults."
-    echo " - Destructive actions require the exact words REDEPLOY or DELETE; backup replacement requires OVERWRITE."
+    echo " - Node deletion requires the exact word DELETE; backup replacement requires OVERWRITE."
     echo " - Run the script as the same user that owns ~/.limonatad to avoid permission issues."
     echo -e "${GREEN}Recommended flow for a new validator:${RESET}"
     echo " - 1a Deploy node -> wait until 1d shows catching_up=false"
@@ -925,7 +973,7 @@ function show_guidelines() {
     echo " - 2c Create validator -> build a reliable track record"
     echo " - Apply at https://limonata.xyz/#validator with the valoper address and a new, never-funded grant wallet"
     echo -e "${GREEN}Menu options:${RESET}"
-    echo " - 1a Deploy/re-deploy the node with the reviewed binary and Cosmovisor; re-deploy permanently replaces existing node data."
+    echo " - 1a Deploy a fresh node with the reviewed binary and private Cosmovisor; existing node data, binaries or services are refused."
     echo " - 1b Check the reviewed binary target; Cosmovisor-managed nodes refuse direct replacement."
     echo " - 1c Add peers manually or restore the official peer."
     echo " - 1d Show local RPC status, sync state, and the network height gap."
@@ -947,7 +995,7 @@ function show_guidelines() {
     echo " - Operator-facing limonatad path: $HOME/go/bin/limonatad."
     echo " - After deploying or updating, use 1d (status) and 1e (logs) to verify the node."
     echo " - Run 'source ~/.bash_profile' after exiting to refresh saved environment variables in your login shell."
-    echo " - Stop the service before deleting or redeploying to prevent lock errors."
+    echo " - Stop the service before deleting a node to prevent lock errors; recovery and migration require separate review."
     echo -e "${GREEN}Safety:${RESET}"
     echo " - Never share private keys, mnemonics, or RPC auth details."
     echo " - Testnet tokens are valueless; stake delegated by the team remains team property."
@@ -961,7 +1009,7 @@ function menu() {
     local_height=$(get_local_height)
     [ -z "$local_height" ] && local_height="N/A (node not running)"
     network_height=$(get_network_height)
-    [ -z "$network_height" ] && network_height="N/A ($LIMONATA_EVM_RPC unavailable)"
+    [ -z "$network_height" ] && network_height="N/A (RPC unavailable or wrong chain)"
     block_gap="N/A"
     if [[ "$network_height" =~ ^[0-9]+$ && "$local_height" =~ ^[0-9]+$ ]]; then
         block_gap=$((network_height - local_height))
@@ -969,7 +1017,7 @@ function menu() {
     echo -e "${ORANGE}Valley of Limonata Testnet${RESET}"
     echo "Main Menu:"
     echo -e "${GREEN}1. Node Interactions:${RESET}"
-    echo "   a. Deploy/Re-deploy Limonata Node"
+    echo "   a. Deploy Limonata Node (Fresh Install Only)"
     echo "   b. Update Limonata Binary"
     echo "   c. Add Peers"
     echo "   d. Show Node Status"

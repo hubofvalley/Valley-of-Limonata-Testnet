@@ -7,7 +7,7 @@ How to run the tool, navigate it, and understand each menu option.
 Run the reviewed wrapper directly:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/0739abeb408e23f31f9f2c94ea2817b3f8c6d347/resources/valleyofLimonata.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/0e501e71c94fa731e803a9aa441c4912aa5e3024/resources/valleyofLimonata.sh)
 ```
 
 This URL is pinned to the reviewed wrapper commit. The wrapper downloads child scripts from immutable commit URLs with `curl -fsSL`
@@ -28,7 +28,7 @@ installs expose the command at `~/go/bin/limonatad`, matching Valley of Story.
 
 - Choose an option by typing the number + letter together, for example `1a`.
 - Normal confirmations require `yes` or `no`; destructive actions require the
-  exact words shown by the tool, such as `REDEPLOY` or `DELETE`.
+  exact words shown by the tool, such as `DELETE`.
 - After exiting, run `source ~/.bash_profile` if you want newly written variables
   in the current shell.
 
@@ -38,10 +38,10 @@ installs expose the command at `~/go/bin/limonatad`, matching Valley of Story.
 
 | Option | What it does | Risk | When to use |
 |---|---|---|---|
-| **1a. Deploy/Re-deploy Limonata Node** | Installs the reviewed `limonata-v0.3.6` target, verifies the official artifact, installs pinned Cosmovisor, places the operator-facing command at `~/go/bin/limonatad`, initializes the node, configures the network, and starts the systemd service through Cosmovisor. Existing installs require `REDEPLOY`. | **Destructive on re-deploy:** removes `~/.limonatad`, including local block data and `priv_validator_key.json`. | First setup or an intentional clean reinstall. |
+| **1a. Deploy Limonata Node (fresh only)** | Installs the reviewed release and pinned Cosmovisor, validates configuration, and starts a new service. Refuses existing node homes, binaries, units, symlinks, and unverifiable systemd state before installation. | **Fail-closed:** never deletes or replaces an existing installation. | First-time setup only; existing operators must use a separately reviewed recovery or upgrade plan. |
 | **1b. Update Limonata Binary** | On new Valley installs, detects that `~/go/bin/limonatad` points to Cosmovisor `current` and refuses direct binary replacement. If the current target is already v0.3.6 it exits cleanly. The legacy direct-binary path accepts only reviewed v0.3.6 metadata and verifies the pinned signing-key fingerprint, signed checksum file, pinned artifact SHA-256, and reported version before stopping the service. | Direct replacement of a Cosmovisor `current` binary is blocked; a legacy update fails closed before service changes if release verification fails. | Check whether a current Valley node needs a reviewed upgrade. |
 | **1c. Add Peers** | Edits `persistent_peers` in `~/.limonatad/config/config.toml`. | Configuration change. | Peer/connectivity repair. |
-| **1d. Show Node Status** | Reads the local RPC status and compares local height with the public Limonata RPC. | Read-only. | Check sync progress. |
+| **1d. Show Node Status** | Reads local RPC status. Compares heights only after the configured EVM RPC returns the expected `eth_chainId`; otherwise shows network height unavailable. | Read-only, wrong-chain fail-closed. | Check sync progress without comparing different networks. |
 | **1e. Show Node Logs** | Live-tails the configured systemd unit. | Read-only. | Debugging or watching sync. |
 
 ### 2. Validator/Key Interactions
@@ -69,6 +69,14 @@ installs expose the command at `~/go/bin/limonatad`, matching Valley of Story.
 Option 4 shows official endpoints and useful links. Option 5 shows the in-tool
 operator guidelines. Option 6 exits.
 
+As of 2026-11-14, `https://rpc.limonata.xyz` reports EVM chain ID `20777`
+(`0x5129`), while this project targets testnet `10777` (`0x2a19`). The
+`LIMONATA_EVM_RPC` setting can point to a separately verified testnet EVM RPC,
+but a successful HTTP response alone does not qualify it as a testnet witness.
+If no matching RPC is available, the menu shows network height/gap as unknown
+instead of displaying a misleading cross-network comparison. This check does
+not establish that the local node is fresh or that the testnet is healthy.
+
 ## Fresh-install binary and Cosmovisor model
 
 Valley currently pins:
@@ -77,8 +85,10 @@ Valley currently pins:
 - source commit: `effa377d673fc6f0fb307a78ca54e037e53060f7`
 - artifact SHA-256: `39ff376963498de120604c273d50751afc005ebeec9cbcca88c0f732eff56125`
 - release-signing fingerprint: `A45380198F390AF69126AE12E4ECEC477C1735FB`
-- Cosmovisor: `v1.7.1`
-- Valley installer Go toolchain: `1.26.5`
+- Cosmovisor: `v1.7.3`
+- Cosmovisor Linux AMD64 artifact SHA-256: `3df6ef38cf976b00d226f391dc6866b8dc4040fc2f1b4a780d248f6e1cc9332e`
+- Valley source-build Go toolchain: `1.26.8`
+- Fresh installs use the pinned official Cosmovisor release artifact; Go is only installed when the operator selects the Limonata source-build path.
 - operator-facing binary: `$HOME/go/bin/limonatad`
 
 The v0.3.6 source intentionally preserves legacy behavior before its coordinated
@@ -133,18 +143,36 @@ scripts unless their local SHA-256 matches its reviewed pins.
   resolves to the pinned full commit.
 - **Transaction indexer ON**: keeps `indexer = "kv"`; OFF uses `"null"`.
 - **Custom pruning ON**: uses `keep-recent=100` and `interval=19`.
-- **State sync ON**: starts from trusted state obtained from the official
-  CometBFT RPC. If you explicitly want to execute from block 1, choose state
-  sync OFF.
+- **State sync ON**: starts from trusted state only after the official CometBFT
+  RPC and a distinct witness RPC agree on the same trusted commit. If either
+  endpoint is unhealthy, on the wrong chain, has a missing or stale latest-block
+  timestamp (older than 600 seconds or more than 60 seconds in the future), or
+  disagrees on the hash, the
+  installer refuses state sync and offers normal genesis sync instead. If you
+  explicitly want to execute from block 1, choose state sync OFF.
+- **Genesis source change (2026-11-13)**: the upstream mutable genesis URL now
+  serves another chain. The testnet installer verifies the pinned testnet
+  checksum and chain ID before staging binaries or initializing the node, and
+  refuses installation while no reviewed testnet genesis is available. Do not
+  bypass this guard or substitute mainnet genesis.
 - **UFW ON**: preserves the SSH port you provide and opens the selected Limonata
   P2P port.
 
 ## Safety notes
 
 - Never share private keys or mnemonics.
+- Menu 3c refuses node deletion when stopping or disabling the service fails,
+  when the service is not positively verified inactive, or when systemd unit
+  removal/reload fails. It does not treat unknown service state as proof that
+  the signer stopped, or remove an unmanaged global limonatad binary.
+- Menu 3d backs up only the validator key; that does not preserve last-sign
+  state. File-based CometBFT signers normally track the last signed height,
+  round, and step in data/priv_validator_state.json; remote signers maintain
+  their own anti-double-sign state. Never run the same consensus key on two
+  active signers or restore it with stale/missing signing state. Use a reviewed
+  recovery or migration procedure before destructive decommissioning.
 - Testnet tokens are valueless.
 - Staking transactions use `1000000000aLIMO` gas price in the Valley flow.
-- Audit operational scripts before running them, especially destructive deploy,
-  delete, and upgrade paths.
+- Audit operational scripts before running them, especially delete, recovery, and upgrade paths.
 
 last updated by: John
