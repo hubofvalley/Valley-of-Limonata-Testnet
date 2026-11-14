@@ -22,7 +22,8 @@ Supported platform: Linux x86_64 (AMD64).
 - Cosmovisor executable: `~/.local/libexec/valley-of-limonata/cosmovisor` (never overwrites a host-global binary)
 - Active binary target: `~/.limonatad/cosmovisor/current/bin/limonatad`
 - Service: `limonatad.service`
-- Genesis: https://limonata.xyz/genesis.json
+- Genesis: the former public URL https://limonata.xyz/genesis.json now serves
+  mainnet (`limonata_20777-1`); it is **not** a testnet bootstrap source.
 - Faucet: https://faucet.limonata.xyz
 
 Fresh Valley installs use the official `v0.3.6` binary as the Cosmovisor genesis
@@ -69,7 +70,8 @@ This URL is pinned to the reviewed wrapper commit.
 - Pre-stage replay-safe v0.3.6 across known historical Cosmovisor upgrade slots for genesis sync
 - Protect Cosmovisor-managed nodes from direct replacement and verify reviewed legacy updates with the same signed-release trust contract
 - Add/reset persistent peers
-- Node status (block height, catching_up) and live logs
+- Node status (block height, catching_up) and live logs; the public EVM height
+  is shown only when `eth_chainId` agrees with the configured testnet identity
 - Create/recover operator key, show validator consensus pubkey
 - Create validator (guided `validator.json` + `tx staking create-validator`)
 - Query balance, delegate tokens, query validator status
@@ -79,6 +81,15 @@ The installer now refuses existing node data, binaries, symlinks, and uncertain
 systemd unit state before any installation work. It never offers an automatic
 redeploy or deletes validator signing state. Restoring or migrating an existing
 validator requires a separate, reviewed procedure.
+
+**Network boundary (2026-11-14):** Limonata published a separate mainnet
+startup package (`v0.4.0-mainnet.3`, chain `limonata_20777-1`) on 2026-11-12.
+The former public testnet EVM RPC currently answers `eth_chainId=0x5129`
+(20777), not 10777. Valley is still testnet-only; a responsive mainnet RPC
+must not be used to measure testnet sync progress. Its status view therefore
+refuses a height from an RPC with an unexpected or unverified chain ID. The
+testnet installer likewise rejects a wrong-chain genesis before node setup;
+no mainnet migration or testnet restore is implied.
 
 ## Recommended validator flow
 

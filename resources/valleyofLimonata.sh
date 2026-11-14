@@ -247,16 +247,41 @@ function limonata_cmd() {
 
 function hex_to_dec() {
     local value=${1:-}
-    if [[ "$value" =~ ^0x[0-9a-fA-F]+$ ]]; then
-        printf "%d" "$value"
+    local decimal
+    # Limit untrusted RPC quantities before printf/arithmetic: 14 hex digits
+    # fit in a signed 64-bit integer, then enforce exact JSON integer range.
+    if [[ "$value" =~ ^0x[0-9a-fA-F]+$ ]] && [ "${#value}" -le 16 ]; then
+        printf -v decimal '%d' "$value" || return 1
+        if (( decimal <= 9007199254740991 )); then
+            printf '%s\n' "$decimal"
+            return 0
+        fi
     fi
+    return 1
 }
 
 function get_network_height() {
-    local result
-    result=$(curl -m 5 -s -X POST "$LIMONATA_EVM_RPC" \
+    local response remote_chain observed_chain result
+    # An EVM RPC is not a testnet witness merely because it responds to
+    # eth_blockNumber: Limonata's former testnet URL now serves mainnet.
+    if [[ ! "${LIMONATA_EVM_CHAIN_ID:-}" =~ ^[1-9][0-9]*$ ]]; then
+        echo 'Cannot verify expected EVM chain ID; ignoring remote height.' >&2
+        return 1
+    fi
+    response=$(curl -m 5 -fsS -X POST "$LIMONATA_EVM_RPC" \
         -H "Content-Type: application/json" \
-        -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' | jq -r '.result // empty' 2>/dev/null)
+        -d '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}') || return 1
+    remote_chain=$(jq -er 'if (.error? == null) and (.result | type == "string") then .result else empty end' <<<"$response" 2>/dev/null) || return 1
+    observed_chain=$(hex_to_dec "$remote_chain") || return 1
+    if [ "$observed_chain" != "$LIMONATA_EVM_CHAIN_ID" ]; then
+        printf 'EVM RPC chain mismatch: expected %s, received %s. Ignoring remote height.\n' \
+            "$LIMONATA_EVM_CHAIN_ID" "$observed_chain" >&2
+        return 1
+    fi
+    response=$(curl -m 5 -fsS -X POST "$LIMONATA_EVM_RPC" \
+        -H "Content-Type: application/json" \
+        -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}') || return 1
+    result=$(jq -er 'if (.error? == null) and (.result | type == "string") then .result else empty end' <<<"$response" 2>/dev/null) || return 1
     hex_to_dec "$result"
 }
 
@@ -479,7 +504,7 @@ function show_node_status() {
                 echo -e "${YELLOW}A negative value is normal when the local Limonata node is slightly ahead of the public RPC.${RESET}"
             fi
         else
-            echo -e "${YELLOW}Network latest block height: unavailable from $LIMONATA_EVM_RPC${RESET}"
+            echo -e "${YELLOW}Network latest block height: unavailable or wrong chain at $LIMONATA_EVM_RPC${RESET}"
         fi
         echo -e "Catching up: ${YELLOW}$catching_up${RESET}"
         if [ "$catching_up" = "false" ]; then
@@ -984,7 +1009,7 @@ function menu() {
     local_height=$(get_local_height)
     [ -z "$local_height" ] && local_height="N/A (node not running)"
     network_height=$(get_network_height)
-    [ -z "$network_height" ] && network_height="N/A ($LIMONATA_EVM_RPC unavailable)"
+    [ -z "$network_height" ] && network_height="N/A (RPC unavailable or wrong chain)"
     block_gap="N/A"
     if [[ "$network_height" =~ ^[0-9]+$ && "$local_height" =~ ^[0-9]+$ ]]; then
         block_gap=$((network_height - local_height))

@@ -41,7 +41,7 @@ installs expose the command at `~/go/bin/limonatad`, matching Valley of Story.
 | **1a. Deploy Limonata Node (fresh only)** | Installs the reviewed release and pinned Cosmovisor, validates configuration, and starts a new service. Refuses existing node homes, binaries, units, symlinks, and unverifiable systemd state before installation. | **Fail-closed:** never deletes or replaces an existing installation. | First-time setup only; existing operators must use a separately reviewed recovery or upgrade plan. |
 | **1b. Update Limonata Binary** | On new Valley installs, detects that `~/go/bin/limonatad` points to Cosmovisor `current` and refuses direct binary replacement. If the current target is already v0.3.6 it exits cleanly. The legacy direct-binary path accepts only reviewed v0.3.6 metadata and verifies the pinned signing-key fingerprint, signed checksum file, pinned artifact SHA-256, and reported version before stopping the service. | Direct replacement of a Cosmovisor `current` binary is blocked; a legacy update fails closed before service changes if release verification fails. | Check whether a current Valley node needs a reviewed upgrade. |
 | **1c. Add Peers** | Edits `persistent_peers` in `~/.limonatad/config/config.toml`. | Configuration change. | Peer/connectivity repair. |
-| **1d. Show Node Status** | Reads the local RPC status and compares local height with the public Limonata RPC. | Read-only. | Check sync progress. |
+| **1d. Show Node Status** | Reads local RPC status. Compares heights only after the configured EVM RPC returns the expected `eth_chainId`; otherwise shows network height unavailable. | Read-only, wrong-chain fail-closed. | Check sync progress without comparing different networks. |
 | **1e. Show Node Logs** | Live-tails the configured systemd unit. | Read-only. | Debugging or watching sync. |
 
 ### 2. Validator/Key Interactions
@@ -68,6 +68,14 @@ installs expose the command at `~/go/bin/limonatad`, matching Valley of Story.
 
 Option 4 shows official endpoints and useful links. Option 5 shows the in-tool
 operator guidelines. Option 6 exits.
+
+As of 2026-11-14, `https://rpc.limonata.xyz` reports EVM chain ID `20777`
+(`0x5129`), while this project targets testnet `10777` (`0x2a19`). The
+`LIMONATA_EVM_RPC` setting can point to a separately verified testnet EVM RPC,
+but a successful HTTP response alone does not qualify it as a testnet witness.
+If no matching RPC is available, the menu shows network height/gap as unknown
+instead of displaying a misleading cross-network comparison. This check does
+not establish that the local node is fresh or that the testnet is healthy.
 
 ## Fresh-install binary and Cosmovisor model
 
