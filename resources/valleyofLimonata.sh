@@ -507,11 +507,17 @@ function show_node_status() {
             echo -e "${YELLOW}Network latest block height: unavailable or wrong chain at $LIMONATA_EVM_RPC${RESET}"
         fi
         echo -e "Catching up: ${YELLOW}$catching_up${RESET}"
-        if [ "$catching_up" = "false" ]; then
-            echo -e "${GREEN}Node is fully synced.${RESET}"
-        else
-            echo -e "${YELLOW}Node is still syncing. Check again later.${RESET}"
-        fi
+        case "$catching_up" in
+            false)
+                echo -e "${YELLOW}CometBFT reports catching_up=false; block freshness and network sync are not independently verified by this flag.${RESET}"
+                ;;
+            true)
+                echo -e "${YELLOW}CometBFT reports this node is catching up. Check again later.${RESET}"
+                ;;
+            *)
+                echo -e "${YELLOW}Node sync status: UNKNOWN. Check local RPC health before relying on this node.${RESET}"
+                ;;
+        esac
     fi
     echo -e "${YELLOW}Press Enter to go back to Valley of Limonata main menu${RESET}"
     read -r

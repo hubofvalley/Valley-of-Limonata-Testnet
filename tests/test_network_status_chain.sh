@@ -87,4 +87,33 @@ success mainnet 256
 LIMONATA_EVM_CHAIN_ID=invalid
 unknown ok pre-height
 
-echo 'Network status chain-identity tests passed.'
+# Reproduce a CometBFT status that advertises catching_up=false even when
+# the testnet tip is stale or the independent RPC is unavailable.
+# The status screen must not translate that flag into "fully synced".
+eval "$(sed -n '/^function show_node_status() {/,/^}/p' "$wrapper")"
+get_local_rpc_port() { printf '%s\n' '26657'; }
+get_local_status_json() {
+    case "${LOCAL_FLAG:-unknown}" in
+        true|false) printf '{"result":{"sync_info":{"latest_block_height":"256","catching_up":%s}}}\n' "$LOCAL_FLAG" ;;
+        *) printf '%s\n' '{"result":{"sync_info":{"latest_block_height":"256"}}}' ;;
+    esac
+}
+get_network_height() { return 1; }
+menu() { :; }
+export LIMONATA_HOME="$tmp/node" LIMONATA_SERVICE_NAME=limonatad
+export CYAN='' YELLOW='' GREEN='' RED='' RESET=''
+
+status_false=$(LOCAL_FLAG=false show_node_status <<< '')
+[[ "$status_false" == *'Catching up: false'* ]] || fail 'lost raw false catching_up status'
+[[ "$status_false" == *'not independently verified by this flag'* ]] || fail 'false-ready on stale local RPC'
+[[ "$status_false" != *'Node is fully synced.'* ]] || fail 'unqualified sync claim survived'
+
+status_true=$(LOCAL_FLAG=true show_node_status <<< '')
+[[ "$status_true" == *'reports this node is catching up'* ]] || fail 'true catching_up was misclassified'
+[[ "$status_true" != *'Node is fully synced.'* ]] || fail 'true catching_up false-ready'
+
+status_unknown=$(LOCAL_FLAG=unknown show_node_status <<< '')
+[[ "$status_unknown" == *'Node sync status: UNKNOWN'* ]] || fail 'missing catching_up not UNKNOWN'
+[[ "$status_unknown" != *'Node is still syncing.'* ]] || fail 'unknown sync incorrectly classified as syncing'
+
+echo 'Network status chain-identity and sync-claim tests passed.'
