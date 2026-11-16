@@ -50,7 +50,7 @@ installs expose the command at `~/go/bin/limonatad`, matching Valley of Story.
 |---|---|---|---|
 | **2a. Create/Recover Operator Key** | Creates a local key or recovers one from a mnemonic. | **Key operation.** | Before validator creation or after deliberate recovery. |
 | **2b. Show Validator Consensus Pubkey** | Prints the consensus public key. | Read-only. | Build or verify `validator.json`. |
-| **2c. Create Validator** | Validates the selected key and sync state, builds `validator.json`, and broadcasts the staking transaction after confirmation. | **On-chain transaction.** | Once, after the node is synced. |
+| **2c. Create Validator** | Checks that local RPC reports the configured chain ID, a positive block height, and `catching_up=false`, before collecting validator details and again immediately before submission. Builds `validator.json` and broadcasts only after confirmation. These local checks do **not** prove a fresh network tip. | **On-chain transaction; fail-closed when local network identity is unknown or mismatched.** | Only after independently verifying current testnet health and local block freshness. |
 | **2d. Query Balance** | Queries balances for a key or address. | Read-only. | Verify funding. |
 | **2e. Delegate Tokens** | Delegates after validation and explicit confirmation. | **On-chain transaction.** | Self-stake or delegation. |
 | **2f. Query Validator Status** | Queries bonding status, tokens, and commission. | Read-only. | Validator monitoring. |

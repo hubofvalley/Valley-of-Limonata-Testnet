@@ -116,4 +116,39 @@ status_unknown=$(LOCAL_FLAG=unknown show_node_status <<< '')
 [[ "$status_unknown" == *'Node sync status: UNKNOWN'* ]] || fail 'missing catching_up not UNKNOWN'
 [[ "$status_unknown" != *'Node is still syncing.'* ]] || fail 'unknown sync incorrectly classified as syncing'
 
+eval "$(sed -n '/^function local_validator_status_is_eligible() {/,/^}/p' "$wrapper")"
+type local_validator_status_is_eligible >/dev/null || fail 'validator status guard missing'
+get_local_status_json() {
+    case "${LOCAL_MODE:-ok}" in
+        malformed) printf '%s\n' '{broken' ;;
+        unavailable) return 22 ;;
+        *) printf '{"result":{"node_info":{"network":"%s"},"sync_info":{"latest_block_height":"%s","catching_up":%s}}}\n' \
+            "${LOCAL_CHAIN-limonata_10777-1}" "${LOCAL_HEIGHT-256}" "${LOCAL_FLAG-false}" ;;
+    esac
+}
+export LIMONATA_CHAIN_ID='limonata_10777-1'
+local_validator_status_is_eligible || fail 'rejected valid matching-chain local node'
+
+validator_rejected() {
+    if local_validator_status_is_eligible; then
+        fail "validator local status false-ready: $1"
+    fi
+}
+LOCAL_CHAIN=limonata_20777-1; validator_rejected wrong-chain
+LOCAL_CHAIN=''; validator_rejected empty-chain
+unset LOCAL_CHAIN
+LOCAL_HEIGHT=0; validator_rejected zero-height
+LOCAL_HEIGHT=bogus; validator_rejected malformed-height
+unset LOCAL_HEIGHT
+LOCAL_FLAG=true; validator_rejected catching-up
+LOCAL_FLAG=null; validator_rejected missing-flag
+unset LOCAL_FLAG
+LOCAL_MODE=malformed; validator_rejected malformed-json
+LOCAL_MODE=unavailable; validator_rejected rpc-unavailable
+unset LOCAL_MODE
+LIMONATA_CHAIN_ID=limonata_20777-1 LOCAL_CHAIN=limonata_20777-1 \
+    local_validator_status_is_eligible || fail 'expected chain is not configuration-derived'
+[ "$(grep -c 'if ! local_validator_status_is_eligible;' "$wrapper")" -eq 2 ] || \
+    fail 'validator guard must run both before input and immediately before broadcast'
+
 echo 'Network status chain-identity and sync-claim tests passed.'

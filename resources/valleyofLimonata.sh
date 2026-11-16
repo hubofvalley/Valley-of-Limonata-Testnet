@@ -306,10 +306,16 @@ function get_local_height() {
     get_local_status_json | jq -r '.result.sync_info.latest_block_height // empty' 2>/dev/null
 }
 
-function get_local_catching_up() {
-    local val
-    val=$(get_local_status_json | jq -r '.result.sync_info.catching_up' 2>/dev/null)
-    echo "${val:-true}"
+function local_validator_status_is_eligible() {
+    local status_json
+    [ -n "${LIMONATA_CHAIN_ID:-}" ] || return 1
+    status_json=$(get_local_status_json) || return 1
+    # A wrong-network or empty local RPC must never authorise a transaction.
+    jq -e --arg expected "$LIMONATA_CHAIN_ID" '
+        (.result.node_info.network == $expected)
+        and (.result.sync_info.catching_up == false)
+        and (.result.sync_info.latest_block_height | type == "string" and test("^[1-9][0-9]*$"))
+    ' <<<"$status_json" >/dev/null 2>&1
 }
 
 function prompt_back_or_continue() {
@@ -596,8 +602,9 @@ function create_validator() {
         return
     fi
 
-    if [ "$(get_local_catching_up)" != "false" ]; then
-        echo -e "${RED}The local node is not confirmed fully synced. Use menu 1d and wait for catching_up=false.${RESET}"
+    if ! local_validator_status_is_eligible; then
+        echo -e "${RED}Cannot verify local testnet chain identity and catching_up=false from RPC. Refusing validator creation.${RESET}"
+        echo -e "${YELLOW}Even a passing local status does not prove a fresh network tip; verify independent network health before broadcasting.${RESET}"
         menu
         return
     fi
@@ -698,6 +705,13 @@ function create_validator() {
     if [[ "${confirm,,}" != "yes" ]]; then
         rm -f "$VALIDATOR_JSON"
         echo -e "${RED}Cancelled.${RESET}"
+        menu
+        return
+    fi
+
+    if ! local_validator_status_is_eligible; then
+        rm -f "$VALIDATOR_JSON"
+        echo -e "${RED}Local chain identity or sync state is no longer verifiable. Validator transaction blocked.${RESET}"
         menu
         return
     fi

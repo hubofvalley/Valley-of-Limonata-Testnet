@@ -93,7 +93,7 @@ no mainnet migration or testnet restore is implied.
 
 ## Recommended validator flow
 
-1. `1a` Deploy node, wait until `1d` shows `catching_up: false`
+1. `1a` Deploy node; use `1d` to inspect local status, then independently verify testnet identity and block freshness. `catching_up=false` alone is not proof of readiness.
 2. `3d` Backup `priv_validator_key.json` immediately
 3. `2a` Create operator key, fund it via https://faucet.limonata.xyz
 4. `2c` Review and submit the create-validator transaction
