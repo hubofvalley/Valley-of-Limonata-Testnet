@@ -94,13 +94,15 @@ eval "$(sed -n '/^function show_node_status() {/,/^}/p' "$wrapper")"
 get_local_rpc_port() { printf '%s\n' '26657'; }
 get_local_status_json() {
     case "${LOCAL_FLAG:-unknown}" in
-        true|false) printf '{"result":{"sync_info":{"latest_block_height":"256","catching_up":%s}}}\n' "$LOCAL_FLAG" ;;
-        *) printf '%s\n' '{"result":{"sync_info":{"latest_block_height":"256"}}}' ;;
+        true|false) printf '{"result":{"node_info":{"network":"%s"},"sync_info":{"latest_block_height":"%s","catching_up":%s}}}\n' \
+            "${LOCAL_CHAIN-limonata_10777-1}" "${LOCAL_HEIGHT-256}" "$LOCAL_FLAG" ;;
+        *) printf '{"result":{"node_info":{"network":"%s"},"sync_info":{"latest_block_height":"%s"}}}\n' \
+            "${LOCAL_CHAIN-limonata_10777-1}" "${LOCAL_HEIGHT-256}" ;;
     esac
 }
-get_network_height() { return 1; }
+get_network_height() { echo called >> "$tmp/network_queries"; return 1; }
 menu() { :; }
-export LIMONATA_HOME="$tmp/node" LIMONATA_SERVICE_NAME=limonatad
+export LIMONATA_HOME="$tmp/node" LIMONATA_SERVICE_NAME=limonatad LIMONATA_CHAIN_ID=limonata_10777-1
 export CYAN='' YELLOW='' GREEN='' RED='' RESET=''
 
 status_false=$(LOCAL_FLAG=false show_node_status <<< '')
@@ -115,6 +117,31 @@ status_true=$(LOCAL_FLAG=true show_node_status <<< '')
 status_unknown=$(LOCAL_FLAG=unknown show_node_status <<< '')
 [[ "$status_unknown" == *'Node sync status: UNKNOWN'* ]] || fail 'missing catching_up not UNKNOWN'
 [[ "$status_unknown" != *'Node is still syncing.'* ]] || fail 'unknown sync incorrectly classified as syncing'
+
+# A local mainnet or malformed RPC must not be presented against a valid
+# testnet height, even if its catching_up flag is false.
+: > "$tmp/network_queries"
+wrong_chain=$(LOCAL_FLAG=false LOCAL_CHAIN=limonata_20777-1 show_node_status <<< '')
+[[ "$wrong_chain" == *'Local node status UNKNOWN: RPC chain identity'* ]] || fail 'wrong local chain not reported UNKNOWN'
+[[ "$wrong_chain" != *'Block Difference:'* ]] || fail 'compared heights across networks'
+[ ! -s "$tmp/network_queries" ] || fail 'queried remote height after local chain mismatch'
+
+missing_chain=$(LOCAL_FLAG=false LOCAL_CHAIN='' show_node_status <<< '')
+[[ "$missing_chain" == *'Local node status UNKNOWN'* ]] || fail 'missing local chain accepted'
+[ ! -s "$tmp/network_queries" ] || fail 'queried remote height without local chain'
+
+for bad_height in '0' '0x100' 'oops' '9007199254740992' '999999999999999999999999999'; do
+    invalid_height=$(LOCAL_FLAG=false LOCAL_HEIGHT="$bad_height" show_node_status <<< '')
+    [[ "$invalid_height" == *'Local node status UNKNOWN: RPC unavailable or block height invalid'* ]] || \
+        fail "invalid local height accepted: $bad_height"
+    [[ "$invalid_height" != *'Block Difference:'* ]] || fail "compared invalid height: $bad_height"
+done
+[ ! -s "$tmp/network_queries" ] || fail 'queried network after malformed local height'
+
+# The numeric safety gate must still allow the same maximum safe height as the
+# existing EVM RPC decoder (without arithmetic overflow or octal coercion).
+large_valid=$(LOCAL_FLAG=false LOCAL_HEIGHT=9007199254740991 show_node_status <<< '')
+[[ "$large_valid" == *'Local Limonata node block height: 9007199254740991'* ]] || fail 'rejected safe large height'
 
 eval "$(sed -n '/^function local_validator_status_is_eligible() {/,/^}/p' "$wrapper")"
 type local_validator_status_is_eligible >/dev/null || fail 'validator status guard missing'

@@ -70,8 +70,9 @@ This URL is pinned to the reviewed wrapper commit.
 - Pre-stage replay-safe v0.3.6 across known historical Cosmovisor upgrade slots for genesis sync
 - Protect Cosmovisor-managed nodes from direct replacement and verify reviewed legacy updates with the same signed-release trust contract
 - Add/reset persistent peers
-- Node status (block height, catching_up) and live logs; the public EVM height
-  is shown only when `eth_chainId` agrees with the configured testnet identity
+- Node status (block height, catching_up) and live logs; block-height comparisons
+  require a matching local Cosmos chain ID, a safe local height, and the expected
+  remote EVM `eth_chainId`. Ambiguous state is reported as UNKNOWN.
 - Create/recover operator key, show validator consensus pubkey
 - Create validator (guided `validator.json` + `tx staking create-validator`)
 - Query balance, delegate tokens, query validator status

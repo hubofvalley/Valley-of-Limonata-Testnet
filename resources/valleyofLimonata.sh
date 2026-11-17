@@ -478,7 +478,7 @@ function add_peers() {
 }
 
 function show_node_status() {
-    local port status_json node_height catching_up network_height block_difference
+    local port status_json node_height local_chain catching_up network_height block_difference
     port=$(get_local_rpc_port)
     if [ -z "$port" ]; then
         echo -e "${RED}Cannot find local RPC port in $LIMONATA_HOME/config/config.toml. Deploy the node first.${RESET}"
@@ -489,9 +489,19 @@ function show_node_status() {
     fi
 
     status_json=$(get_local_status_json)
-    node_height=$(echo "$status_json" | jq -r '.result.sync_info.latest_block_height // empty' 2>/dev/null)
+    # Never use an unverified RPC string in Bash arithmetic or compare heights
+    # across different Cosmos networks.
+    node_height=$(jq -er '.result.sync_info.latest_block_height
+        | select(type == "string" and test("^[1-9][0-9]*$")
+            and (length < 16 or (length == 16 and . <= "9007199254740991")))' \
+        <<<"$status_json" 2>/dev/null) || node_height=""
+    local_chain=$(jq -er '.result.node_info.network | select(type == "string" and length > 0)' \
+        <<<"$status_json" 2>/dev/null) || local_chain=""
     if [ -z "$node_height" ]; then
-        echo -e "${RED}Cannot reach local node RPC at http://127.0.0.1:${port}/status. Is ${LIMONATA_SERVICE_NAME}.service running?${RESET}"
+        echo -e "${RED}Local node status UNKNOWN: RPC unavailable or block height invalid at http://127.0.0.1:${port}/status.${RESET}"
+    elif [ -z "${LIMONATA_CHAIN_ID:-}" ] || [ "$local_chain" != "$LIMONATA_CHAIN_ID" ]; then
+        echo -e "${RED}Local node status UNKNOWN: RPC chain identity is missing or differs from the configured Limonata chain.${RESET}"
+        echo -e "${YELLOW}Refusing to compare block heights across unverified networks.${RESET}"
     else
         echo -e "${CYAN}Local RPC status: curl http://127.0.0.1:${port}/status | jq${RESET}"
         echo "$status_json" | jq .
