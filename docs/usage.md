@@ -7,7 +7,7 @@ How to run the tool, navigate it, and understand each menu option.
 Run the reviewed wrapper directly:
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/8f7e18249e7e61da779005549168322cac31e0a2/resources/valleyofLimonata.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/hubofvalley/Valley-of-Limonata-Testnet/f419ff88e9b5f83a3b81c81e16766381fde68d1a/resources/valleyofLimonata.sh)
 ```
 
 This URL is pinned to the reviewed wrapper commit. The wrapper downloads child scripts from immutable commit URLs with `curl -fsSL`
