@@ -200,4 +200,13 @@ for mode in age-boundary future-boundary timezone-offset; do
     FAKE_MODE="$mode" configure_state_sync >/dev/null || fail "valid RPC timestamp rejected: $mode"
 done
 
+# Public manual guidance must not provide a runnable state-sync write that
+# bypasses the installer chain, freshness and witness validation.
+manual_section=$(sed -n '/^## Optional state sync$/,/^## Start the node$/p' docs/node-guide.md)
+[[ "$manual_section" == *'menu option `1a`'* ]] || fail 'manual state-sync instructions no longer point to guarded installer'
+if grep -Eq 'sed[[:space:]]+-i|^[[:space:]]*(trust_height|trust_hash|rpc_servers)[[:space:]]*=' <<< "$manual_section"; then
+    fail 'manual state-sync instructions permit an unverified config write'
+fi
+grep -Fq 'independently verify the current testnet tip' docs/usage.md || fail 'operator flow no longer requires freshness verification'
+
 echo "State-sync quorum checks passed."

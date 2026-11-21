@@ -127,7 +127,7 @@ scripts unless their local SHA-256 matches its reviewed pins.
 
 ## Recommended first-time flow
 
-1. `1a` deploy, then wait until `1d` shows `catching_up: false`.
+1. Only deploy with verified testnet genesis provenance. Use `1d` to inspect the local chain and block time, and independently verify the current testnet tip before continuing. `catching_up=false` alone does not establish network freshness or validator readiness.
 2. `3d` back up the validator key immediately.
 3. `2a` create the operator key, fund it from the faucet, and confirm with `2d`.
 4. `2c` create the validator and confirm with `2f`.

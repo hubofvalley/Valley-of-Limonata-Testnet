@@ -182,56 +182,35 @@ reachable.
 
 ## Optional state sync
 
-State sync uses CometBFT RPC endpoints, not the EVM JSON-RPC endpoint. Baconvalley
-requires two distinct RPC endpoints to agree on the same trusted commit before
-enabling state sync. The second endpoint is an independent witness, not a binary
-or software trust source.
+State sync uses CometBFT RPC endpoints, not EVM JSON-RPC. Valley of Limonata
+requires two distinct, independently reviewed testnet RPC sources to agree on
+a trusted commit. Distinct URLs alone do not prove independent operators.
 
-The manual snippet below illustrates the trusted-hash calculation only; it is
-**not** a complete safety preflight and must not be treated as approval to
-restart or restore an existing validator. The Valley installer additionally
-checks both latest block timestamps against a 600-second age limit and a
-60-second future-clock tolerance. Missing, malformed, or stale RPC evidence
-fails closed; use genesis sync if the independent sources are unavailable.
+**Do not copy runnable state-sync configuration commands from older versions of
+this guide.** The former illustrative snippet could write `config.toml` after
+comparing raw hashes, without checking chain identity, RPC block freshness,
+bounded numeric heights, or the returned commit header. Copying it directly
+could enable state sync from invalid or stale evidence.
 
-On 2026-10-30, the previous default CometBFT RPC
-`https://cosmos-rpc.limonata.xyz` returned HTTP 502, while the POSTHUMAN and
-ANODE endpoints returned matching chain identity, current block hashes, and a
-historical trusted commit. Valley uses these two reviewed third-party endpoints
-as defaults, not as a guarantee of future availability or independence. The
-installer must verify both at execution time; no automatic unsafe fallback.
+For a fresh installation, use menu option `1a` with state sync ON. The
+installer validates the two configured sources before it writes state-sync
+settings: expected Cosmos chain ID, `catching_up=false`, valid heights,
+fresh latest-block timestamps, a common trust height, and identical
+well-formed commit evidence at that height. It refuses an unavailable,
+stale, wrong-chain, malformed, or disagreeing witness; there is no automatic
+unsafe fallback. Review actual operator independence separately.
 
-```bash
-CFG="$HOME/.limonatad/config/config.toml"
-PRIMARY_RPC="https://rpc-limonata.posthuman.digital"
-WITNESS_RPC="https://limonata.rpc.t.anode.team"
+Advanced operators may provide independently verified URLs through
+`LIMONATA_STATE_SYNC_PRIMARY_RPC` and
+`LIMONATA_STATE_SYNC_WITNESS_RPC`. These settings are inputs to validation,
+not overrides of its fail-closed checks.
 
-PRIMARY_HEIGHT=$(curl -fsS "$PRIMARY_RPC/status" | jq -r '.result.sync_info.latest_block_height')
-WITNESS_HEIGHT=$(curl -fsS "$WITNESS_RPC/status" | jq -r '.result.sync_info.latest_block_height')
-LATEST=$(( PRIMARY_HEIGHT < WITNESS_HEIGHT ? PRIMARY_HEIGHT : WITNESS_HEIGHT ))
-TRUST=$(( (LATEST - 2000) / 1000 * 1000 ))
-PRIMARY_HASH=$(curl -fsS "$PRIMARY_RPC/commit?height=$TRUST" | jq -r '.result.signed_header.commit.block_id.hash')
-WITNESS_HASH=$(curl -fsS "$WITNESS_RPC/commit?height=$TRUST" | jq -r '.result.signed_header.commit.block_id.hash')
-[ "$PRIMARY_HASH" = "$WITNESS_HASH" ] || { echo "RPC disagreement; refuse state sync" >&2; exit 1; }
-
-sed -i "/^\[statesync\]/,/^\[/ { \
-  s/^enable *=.*/enable = true/; \
-  s#^rpc_servers *=.*#rpc_servers = \"$PRIMARY_RPC,$WITNESS_RPC\"#; \
-  s/^trust_height *=.*/trust_height = $TRUST/; \
-  s/^trust_hash *=.*/trust_hash = \"$PRIMARY_HASH\"/; \
-  s/^trust_period *=.*/trust_period = \"168h0m0s\"/ }" "$CFG"
-```
-
-The installer additionally verifies both endpoints report
-`limonata_10777-1`, are not catching up, return the requested commit height,
-have fresh valid latest-block timestamps, and return a valid 64-hex commit hash.
-Advanced operators can override the two
-RPC URLs for the installer with `LIMONATA_STATE_SYNC_PRIMARY_RPC` and
-`LIMONATA_STATE_SYNC_WITNESS_RPC`; the values must remain distinct.
-
-Choosing state sync means the node starts from a trusted state snapshot rather
-than executing every block from genesis. Disable state sync if you explicitly
-want a full block-1 replay.
+If two trustworthy, fresh testnet RPC sources are not available, do not
+enable state sync. Switching to a full genesis replay also requires a
+verified testnet genesis: the former public genesis URL currently serves
+the separate `limonata_20777-1` network. Do not substitute mainnet evidence
+or bypass genesis provenance checks. Neither mode should be described as
+restore-ready until its prerequisites are independently verified.
 
 ## Start the node
 
