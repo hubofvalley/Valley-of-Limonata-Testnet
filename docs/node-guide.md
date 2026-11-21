@@ -52,8 +52,8 @@ SHA-256 above before installation.
 ## Build from source
 
 The tagged source is pinned to the same full commit. The upstream v0.3.6
-`go.mod` declares Go `1.25.9`; Valley currently installs Go `1.26.5` for its
-source-build/Cosmovisor toolchain.
+`go.mod` declares Go `1.25.9`; Valley installs the pinned Go `1.26.8` toolchain
+only when the operator selects the source-build path.
 
 ```bash
 git clone --depth 1 --branch limonata-v0.3.6 \
@@ -67,20 +67,50 @@ make install
 Both the prebuilt and source paths converge on `$HOME/go/bin/limonatad` before
 Cosmovisor is initialized.
 
-## Initialise the node and fetch genesis
+## Authenticate testnet genesis before initializing the node
+
+As observed on **2026-11-13**, the mutable official URL
+`https://limonata.xyz/genesis.json` serves `limonata_20777-1`, **not** the
+pinned testnet `limonata_10777-1`. Its SHA-256 does not match the reviewed
+testnet digest. Do not use this URL to initialize a testnet node until the
+upstream publishes a verifiable testnet-specific source. Do not remove the
+checksum or switch this testnet tool to mainnet parameters. The automated
+installer checks the candidate **before** installing a binary or initializing
+a node home, but may still install OS prerequisites before this check.
+
+For a later verified testnet source, the manual operation must preserve this
+order: download into a temporary file, verify both digest and chain ID, then
+initialize the node and install the authenticated genesis. The following
+example deliberately refuses the currently mismatching URL:
 
 ```bash
 MONIKER="your-moniker"
 LIMONATA_HOME="$HOME/.limonatad"
-$HOME/go/bin/limonatad --home "$LIMONATA_HOME" init "$MONIKER" --chain-id limonata_10777-1
-curl -fsSL https://limonata.xyz/genesis.json -o "$LIMONATA_HOME/config/genesis.json"
-$HOME/go/bin/limonatad --home "$LIMONATA_HOME" genesis validate-genesis
+GENESIS_CANDIDATE=$(mktemp)
+if curl -fsSL https://limonata.xyz/genesis.json -o "$GENESIS_CANDIDATE" \
+   && printf '%s  %s\n' \
+      'bb76a6d8abbb1bdeaa41d92811066b16bd6a48f58f7136e3fcb71226b6af4569' \
+      "$GENESIS_CANDIDATE" | sha256sum -c - \
+   && jq -e '.chain_id == "limonata_10777-1"' "$GENESIS_CANDIDATE" >/dev/null; then
+    if "$HOME/go/bin/limonatad" --home "$LIMONATA_HOME" init "$MONIKER" --chain-id limonata_10777-1 \
+       && install -m 0644 "$GENESIS_CANDIDATE" "$LIMONATA_HOME/config/genesis.json" \
+       && "$HOME/go/bin/limonatad" --home "$LIMONATA_HOME" genesis validate-genesis; then
+        echo "Testnet genesis verified and installed."
+    else
+        echo "Node initialization or genesis validation failed; inspect partial state manually." >&2
+    fi
+else
+    echo "REFUSED: upstream genesis is not the reviewed Limonata testnet genesis." >&2
+fi
+rm -f -- "$GENESIS_CANDIDATE"
 ```
 
 ## Cosmovisor layout
 
 New Valley deployments run `limonatad` through Cosmovisor from the start. The
-installer pins Cosmovisor `v1.7.1`, disables binary auto-downloads, and creates:
+installer pins the official Cosmovisor `v1.7.3` Linux AMD64 release artifact
+by SHA-256 and disables binary auto-downloads. It creates the following
+per-node layout:
 
 ```text
 $HOME/.limonatad/cosmovisor/
@@ -89,6 +119,12 @@ $HOME/.limonatad/cosmovisor/
   upgrades/
   backup/
 ```
+
+The verified Cosmovisor executable is installed in the Limonata-private path
+`$HOME/.local/libexec/valley-of-limonata/cosmovisor`, rather than replacing
+`/usr/local/bin/cosmovisor` (which may be used by other chains). An existing
+private executable is reused only when it is byte-identical to the verified
+release artifact; other files and symlinks fail closed.
 
 The user-facing command remains:
 
@@ -146,26 +182,35 @@ reachable.
 
 ## Optional state sync
 
-State sync uses the CometBFT RPC endpoint, not the EVM JSON-RPC endpoint.
+State sync uses CometBFT RPC endpoints, not EVM JSON-RPC. Valley of Limonata
+requires two distinct, independently reviewed testnet RPC sources to agree on
+a trusted commit. Distinct URLs alone do not prove independent operators.
 
-```bash
-CFG="$HOME/.limonatad/config/config.toml"
-RPC="https://cosmos-rpc.limonata.xyz"
-LATEST=$(curl -fsS "$RPC/block" | jq -r '.result.block.header.height')
-TRUST=$(( (LATEST - 2000) / 1000 * 1000 ))
-HASH=$(curl -fsS "$RPC/commit?height=$TRUST" | jq -r '.result.signed_header.commit.block_id.hash')
+**Do not copy runnable state-sync configuration commands from older versions of
+this guide.** The former illustrative snippet could write `config.toml` after
+comparing raw hashes, without checking chain identity, RPC block freshness,
+bounded numeric heights, or the returned commit header. Copying it directly
+could enable state sync from invalid or stale evidence.
 
-sed -i "/^\[statesync\]/,/^\[/ { \
-  s/^enable *=.*/enable = true/; \
-  s#^rpc_servers *=.*#rpc_servers = \"$RPC,$RPC\"#; \
-  s/^trust_height *=.*/trust_height = $TRUST/; \
-  s/^trust_hash *=.*/trust_hash = \"$HASH\"/; \
-  s/^trust_period *=.*/trust_period = \"168h0m0s\"/ }" "$CFG"
-```
+For a fresh installation, use menu option `1a` with state sync ON. The
+installer validates the two configured sources before it writes state-sync
+settings: expected Cosmos chain ID, `catching_up=false`, valid heights,
+fresh latest-block timestamps, a common trust height, and identical
+well-formed commit evidence at that height. It refuses an unavailable,
+stale, wrong-chain, malformed, or disagreeing witness; there is no automatic
+unsafe fallback. Review actual operator independence separately.
 
-Choosing state sync means the node starts from a trusted state snapshot rather
-than executing every block from genesis. Disable state sync if you explicitly
-want a full block-1 replay.
+Advanced operators may provide independently verified URLs through
+`LIMONATA_STATE_SYNC_PRIMARY_RPC` and
+`LIMONATA_STATE_SYNC_WITNESS_RPC`. These settings are inputs to validation,
+not overrides of its fail-closed checks.
+
+If two trustworthy, fresh testnet RPC sources are not available, do not
+enable state sync. Switching to a full genesis replay also requires a
+verified testnet genesis: the former public genesis URL currently serves
+the separate `limonata_20777-1` network. Do not substitute mainnet evidence
+or bypass genesis provenance checks. Neither mode should be described as
+restore-ready until its prerequisites are independently verified.
 
 ## Start the node
 
@@ -215,5 +260,19 @@ $HOME/go/bin/limonatad --home "$HOME/.limonatad" query staking validator <cosmos
 Store every mnemonic offline. In `validator.json`, use the public key returned by
 `comet show-validator`, express self-bond in aLIMO, and keep
 `min-self-delegation` at `"1"` unless upstream policy changes.
+
+## Genesis provenance during fresh installation
+
+The installer downloads canonical testnet genesis into a temporary candidate
+file and checks the pinned SHA-256 and Cosmos chain ID before copying it to the
+node home and running the binary's `genesis validate-genesis` command. The
+reviewed digest is recorded in `VERSIONS.json`. A digest mismatch, unavailable
+candidate, malformed JSON or unexpected chain causes a fail-closed exit.
+Genesis is retrieved from a mutable upstream URL, so maintainers must review
+and independently verify a changed genesis before updating the pin.
+
+If installation fails after initializing the node home, partial local files may
+remain. The fresh-install guard intentionally refuses reruns; do not delete or
+reset validator data automatically. Assess any recovery manually.
 
 last updated by: John

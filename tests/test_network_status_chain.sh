@@ -1,0 +1,181 @@
+#!/bin/bash
+set -euo pipefail
+
+# Exercise the real read-only wrapper functions without sourcing its interactive
+# menu, profile writes, node operations or service-management functions.
+wrapper=resources/valleyofLimonata.sh
+fail() { echo "FAIL: $*" >&2; exit 1; }
+eval "$(sed -n '/^function hex_to_dec() {/,/^}/p' "$wrapper")"
+eval "$(sed -n '/^function get_network_height() {/,/^}/p' "$wrapper")"
+type get_network_height >/dev/null || fail 'network status function missing'
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/bin"
+cat >"$tmp/bin/curl" <<'EOF'
+#!/bin/bash
+payload=''
+while [ "$#" -gt 0 ]; do
+    if [ "$1" = '-d' ]; then payload=$2; shift 2; else shift; fi
+done
+case "$payload" in
+    *'"eth_chainId"'*)
+        echo chain >> "$CALL_LOG"
+        case "${FAKE_MODE:-ok}" in
+            chain-down) exit 22 ;;
+            mainnet) echo '{"jsonrpc":"2.0","id":1,"result":"0x5129"}' ;;
+            malformed-chain) echo '{"jsonrpc":"2.0","id":1,"result":"bad"}' ;;
+            error-chain) echo '{"jsonrpc":"2.0","id":1,"error":{"code":-1},"result":"0x2a19"}' ;;
+            wrong-type) echo '{"jsonrpc":"2.0","id":1,"result":10777}' ;;
+            *) echo '{"jsonrpc":"2.0","id":1,"result":"0x2a19"}' ;;
+        esac
+        ;;
+    *'"eth_blockNumber"'*)
+        echo block >> "$CALL_LOG"
+        case "${FAKE_MODE:-ok}" in
+            block-down) exit 22 ;;
+            malformed-block) echo '{"jsonrpc":"2.0","id":1,"result":"not-hex"}' ;;
+            oversized-block) echo '{"jsonrpc":"2.0","id":1,"result":"0x20000000000000"}' ;;
+            block-error) echo '{"jsonrpc":"2.0","id":1,"error":{"code":-1},"result":"0x100"}' ;;
+            *) echo '{"jsonrpc":"2.0","id":1,"result":"0x100"}' ;;
+        esac
+        ;;
+    *) exit 22 ;;
+esac
+EOF
+chmod +x "$tmp/bin/curl"
+export PATH="$tmp/bin:$PATH" CALL_LOG="$tmp/calls" LIMONATA_EVM_RPC='https://rpc.example'
+export LIMONATA_EVM_CHAIN_ID=10777
+
+success() {
+    local value
+    : > "$CALL_LOG"
+    value=$(FAKE_MODE="$1" get_network_height 2>"$tmp/stderr") || fail "rejected valid RPC: $1"
+    [ "$value" = "$2" ] || fail "wrong height for $1: $value"
+    [ "$(cat "$CALL_LOG")" = "$(printf 'chain\nblock')" ] || fail 'RPC check order incorrect'
+}
+
+unknown() {
+    local value status
+    : > "$CALL_LOG"
+    set +e
+    value=$(FAKE_MODE="$1" get_network_height 2>"$tmp/stderr")
+    status=$?
+    set -e
+    [ "$status" -ne 0 ] || fail "false-ready on $1"
+    [ -z "$value" ] || fail "leaked network height on $1"
+    if [ "$2" = 'pre-height' ]; then
+        ! grep -q block "$CALL_LOG" || fail "queried height after unverified chain: $1"
+    fi
+}
+
+success ok 256
+unknown mainnet pre-height
+grep -Fq 'EVM RPC chain mismatch: expected 10777, received 20777' "$tmp/stderr" || fail 'wrong chain lacks explanation'
+unknown chain-down pre-height
+unknown malformed-chain pre-height
+unknown error-chain pre-height
+unknown wrong-type pre-height
+unknown block-down post-chain
+unknown malformed-block post-chain
+unknown oversized-block post-chain
+unknown block-error post-chain
+
+# Expected chain is configuration-derived, not implicitly accepted as mainnet.
+LIMONATA_EVM_CHAIN_ID=20777
+success mainnet 256
+LIMONATA_EVM_CHAIN_ID=invalid
+unknown ok pre-height
+
+# Reproduce a CometBFT status that advertises catching_up=false even when
+# the testnet tip is stale or the independent RPC is unavailable.
+# The status screen must not translate that flag into "fully synced".
+eval "$(sed -n '/^function show_node_status() {/,/^}/p' "$wrapper")"
+get_local_rpc_port() { printf '%s\n' '26657'; }
+get_local_status_json() {
+    case "${LOCAL_FLAG:-unknown}" in
+        true|false) printf '{"result":{"node_info":{"network":"%s"},"sync_info":{"latest_block_height":"%s","catching_up":%s}}}\n' \
+            "${LOCAL_CHAIN-limonata_10777-1}" "${LOCAL_HEIGHT-256}" "$LOCAL_FLAG" ;;
+        *) printf '{"result":{"node_info":{"network":"%s"},"sync_info":{"latest_block_height":"%s"}}}\n' \
+            "${LOCAL_CHAIN-limonata_10777-1}" "${LOCAL_HEIGHT-256}" ;;
+    esac
+}
+get_network_height() { echo called >> "$tmp/network_queries"; return 1; }
+menu() { :; }
+export LIMONATA_HOME="$tmp/node" LIMONATA_SERVICE_NAME=limonatad LIMONATA_CHAIN_ID=limonata_10777-1
+export CYAN='' YELLOW='' GREEN='' RED='' RESET=''
+
+status_false=$(LOCAL_FLAG=false show_node_status <<< '')
+[[ "$status_false" == *'Catching up: false'* ]] || fail 'lost raw false catching_up status'
+[[ "$status_false" == *'not independently verified by this flag'* ]] || fail 'false-ready on stale local RPC'
+[[ "$status_false" != *'Node is fully synced.'* ]] || fail 'unqualified sync claim survived'
+
+status_true=$(LOCAL_FLAG=true show_node_status <<< '')
+[[ "$status_true" == *'reports this node is catching up'* ]] || fail 'true catching_up was misclassified'
+[[ "$status_true" != *'Node is fully synced.'* ]] || fail 'true catching_up false-ready'
+
+status_unknown=$(LOCAL_FLAG=unknown show_node_status <<< '')
+[[ "$status_unknown" == *'Node sync status: UNKNOWN'* ]] || fail 'missing catching_up not UNKNOWN'
+[[ "$status_unknown" != *'Node is still syncing.'* ]] || fail 'unknown sync incorrectly classified as syncing'
+
+# A local mainnet or malformed RPC must not be presented against a valid
+# testnet height, even if its catching_up flag is false.
+: > "$tmp/network_queries"
+wrong_chain=$(LOCAL_FLAG=false LOCAL_CHAIN=limonata_20777-1 show_node_status <<< '')
+[[ "$wrong_chain" == *'Local node status UNKNOWN: RPC chain identity'* ]] || fail 'wrong local chain not reported UNKNOWN'
+[[ "$wrong_chain" != *'Block Difference:'* ]] || fail 'compared heights across networks'
+[ ! -s "$tmp/network_queries" ] || fail 'queried remote height after local chain mismatch'
+
+missing_chain=$(LOCAL_FLAG=false LOCAL_CHAIN='' show_node_status <<< '')
+[[ "$missing_chain" == *'Local node status UNKNOWN'* ]] || fail 'missing local chain accepted'
+[ ! -s "$tmp/network_queries" ] || fail 'queried remote height without local chain'
+
+for bad_height in '0' '0x100' 'oops' '9007199254740992' '999999999999999999999999999'; do
+    invalid_height=$(LOCAL_FLAG=false LOCAL_HEIGHT="$bad_height" show_node_status <<< '')
+    [[ "$invalid_height" == *'Local node status UNKNOWN: RPC unavailable or block height invalid'* ]] || \
+        fail "invalid local height accepted: $bad_height"
+    [[ "$invalid_height" != *'Block Difference:'* ]] || fail "compared invalid height: $bad_height"
+done
+[ ! -s "$tmp/network_queries" ] || fail 'queried network after malformed local height'
+
+# The numeric safety gate must still allow the same maximum safe height as the
+# existing EVM RPC decoder (without arithmetic overflow or octal coercion).
+large_valid=$(LOCAL_FLAG=false LOCAL_HEIGHT=9007199254740991 show_node_status <<< '')
+[[ "$large_valid" == *'Local Limonata node block height: 9007199254740991'* ]] || fail 'rejected safe large height'
+
+eval "$(sed -n '/^function local_validator_status_is_eligible() {/,/^}/p' "$wrapper")"
+type local_validator_status_is_eligible >/dev/null || fail 'validator status guard missing'
+get_local_status_json() {
+    case "${LOCAL_MODE:-ok}" in
+        malformed) printf '%s\n' '{broken' ;;
+        unavailable) return 22 ;;
+        *) printf '{"result":{"node_info":{"network":"%s"},"sync_info":{"latest_block_height":"%s","catching_up":%s}}}\n' \
+            "${LOCAL_CHAIN-limonata_10777-1}" "${LOCAL_HEIGHT-256}" "${LOCAL_FLAG-false}" ;;
+    esac
+}
+export LIMONATA_CHAIN_ID='limonata_10777-1'
+local_validator_status_is_eligible || fail 'rejected valid matching-chain local node'
+
+validator_rejected() {
+    if local_validator_status_is_eligible; then
+        fail "validator local status false-ready: $1"
+    fi
+}
+LOCAL_CHAIN=limonata_20777-1; validator_rejected wrong-chain
+LOCAL_CHAIN=''; validator_rejected empty-chain
+unset LOCAL_CHAIN
+LOCAL_HEIGHT=0; validator_rejected zero-height
+LOCAL_HEIGHT=bogus; validator_rejected malformed-height
+unset LOCAL_HEIGHT
+LOCAL_FLAG=true; validator_rejected catching-up
+LOCAL_FLAG=null; validator_rejected missing-flag
+unset LOCAL_FLAG
+LOCAL_MODE=malformed; validator_rejected malformed-json
+LOCAL_MODE=unavailable; validator_rejected rpc-unavailable
+unset LOCAL_MODE
+LIMONATA_CHAIN_ID=limonata_20777-1 LOCAL_CHAIN=limonata_20777-1 \
+    local_validator_status_is_eligible || fail 'expected chain is not configuration-derived'
+[ "$(grep -c 'if ! local_validator_status_is_eligible;' "$wrapper")" -eq 2 ] || \
+    fail 'validator guard must run both before input and immediately before broadcast'
+
+echo 'Network status chain-identity and sync-claim tests passed.'
